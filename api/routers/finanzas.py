@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List
 import sqlite3
 from api.database import get_db, rows_to_list, row_to_dict
-from api.schemas import GastoOut, GastoBatchIn, GastoUpdate, PagoRegistrar, PagosResumenOut, PagoUnitRow, MessageOut
+from api.schemas import GastoOut, GastoCreate, GastoBatchIn, GastoUpdate, PagoRegistrar, PagosResumenOut, PagoUnitRow, MessageOut
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -35,6 +35,16 @@ def _pn_of(k):
 def get_gastos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlite3.Connection = Depends(get_db)):
     rows = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=? ORDER BY categoria, descripcion", (consorcio, periodo)).fetchall()
     return rows_to_list(rows)
+
+@router.post("/finanzas/gastos", response_model=GastoOut, status_code=201)
+def create_gasto(consorcio_id: int, periodo: str, body: GastoCreate, db: sqlite3.Connection = Depends(get_db)):
+    cur = db.execute(
+        "INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,comprobante_path) VALUES(?,?,?,?,?,?)",
+        (consorcio_id, periodo, body.categoria, body.descripcion, body.monto, body.comprobante_path)
+    )
+    row = db.execute("SELECT * FROM gastos WHERE id=?", (cur.lastrowid,)).fetchone()
+    return dict(row)
+
 
 @router.post("/finanzas/gastos/batch", response_model=MessageOut)
 def batch_gastos(body: GastoBatchIn, db: sqlite3.Connection = Depends(get_db)):

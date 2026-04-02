@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
-import { useGet, usePost, usePut, useDelete } from "@/hooks/useApi";
+import api from "@/lib/api";
+import { useGet, usePut, useDelete } from "@/hooks/useApi";
 import { Gasto, GastoBatchItem } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +31,7 @@ export function CargaGastosPage() {
   const [file, setFile] = useState<File | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const { data: gastos, loading, refetch } = useGet<Gasto[]>("/api/finanzas/gastos", CONSORCIO ? { consorcio: CONSORCIO, periodo: PERIODO } : null);
-  const { post: postBatch, loading: saving } = usePost<object, object>("/api/finanzas/gastos/batch");
+  const [saving, setSaving] = useState(false);
   const { put, loading: updating } = usePut<object, object>("/api/finanzas/gastos");
   const { remove, loading: deleting } = useDelete("/api/finanzas/gastos");
   const onDrop = useCallback((files: File[]) => { if (files[0]) setFile(files[0]); }, []);
@@ -46,9 +47,16 @@ export function CargaGastosPage() {
       if (res !== null) { toast.success("Gasto actualizado"); resetForm(); refetch(); }
       else { toast.error("Error al actualizar el gasto"); }
     } else {
-      const res = await postBatch({ consorcio_id: CONSORCIO, periodo: PERIODO, gastos: [form] });
-      if (res) { toast.success(`Gasto guardado: ${form.descripcion}`); resetForm(); refetch(); }
-      else { toast.error("Error al guardar el gasto"); }
+      setSaving(true);
+      try {
+        await api.post("/api/finanzas/gastos", form, { params: { consorcio_id: CONSORCIO, periodo: PERIODO } });
+        toast.success(`Gasto guardado: ${form.descripcion}`);
+        resetForm(); refetch();
+      } catch (err: any) {
+        toast.error(err?.response?.data?.detail ?? err?.message ?? "Error al guardar el gasto");
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
