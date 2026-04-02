@@ -6,6 +6,7 @@ import { DashboardPage } from "@/pages/Dashboard";
 import { EstadoPagosPage } from "@/pages/EstadoPagos";
 import { CargaGastosPage } from "@/pages/CargaGastos";
 import { ConsorciosPage } from "@/pages/Consorcios";
+import { useUpdater } from "@/hooks/useUpdater";
 
 function Placeholder({ title }: { title: string }) {
   return (
@@ -16,6 +17,8 @@ function Placeholder({ title }: { title: string }) {
 }
 
 export default function App() {
+  useUpdater();
+
   return (
     <AppProvider>
       <Toaster position="bottom-right" richColors theme="dark" />
