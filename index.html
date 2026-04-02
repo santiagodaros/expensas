@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Expensas Pellegrini 2004 &mdash; Marzo 2026</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#222}
+.container{max-width:980px;margin:32px auto;padding:0 16px}
+header{background:#1a3a5c;color:#fff;border-radius:12px 12px 0 0;padding:28px 36px}
+header h1{font-size:1.5rem;font-weight:700}
+header p{margin-top:6px;opacity:.8;font-size:.92rem}
+.card{background:#fff;border-radius:0 0 12px 12px;box-shadow:0 2px 14px rgba(0,0,0,.09);padding:32px 36px}
+h2{font-size:1.05rem;color:#1a3a5c;margin-bottom:16px;border-bottom:2px solid #e0e7ef;padding-bottom:8px;text-transform:uppercase;letter-spacing:.04em}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th{background:#1f6aa5;color:#fff;padding:10px 14px;text-align:left;font-weight:600}
+th.monto,td.monto{text-align:right;white-space:nowrap}
+th.doc,td.doc{text-align:center;width:52px}
+th.cat,td.cat{width:48px;text-align:center;font-weight:600}
+td{padding:8px 14px;border-bottom:1px solid #eef0f4}
+tbody tr:hover td{background:#f5f8ff}
+tr.subtotal td{background:#e8f0fb;font-weight:600;color:#1a3a5c;border-top:1px solid #c5d8f0}
+tr.total-row td{background:#ffe066;font-weight:700;font-size:1.04rem;border-top:2px solid #e0b800}
+.doc-link{font-size:1.15rem;text-decoration:none;cursor:pointer;opacity:.8}
+.doc-link:hover{opacity:1}
+footer{text-align:center;margin-top:20px;font-size:.8rem;color:#999}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+  <h1>Pellegrini 2004</h1>
+  <p>Liquidaci&oacute;n de Gastos &nbsp;|&nbsp; Periodo: <strong>Marzo 2026</strong></p>
+</header>
+<div class="card">
+  <h2>Detalle de Gastos por Categor&iacute;a</h2>
+  <table>
+    <thead><tr>
+      <th class="cat">Cat.</th>
+      <th>Descripci&oacute;n del Gasto</th>
+      <th class="monto">Importe $</th>
+      <th class="doc">Doc</th>
+    </tr></thead>
+    <tbody><tr><td class="cat">A</td><td class="desc">Test 1</td><td class="monto">$10.000,00</td><td class="doc"></td></tr>
+<tr><td class="cat">A</td><td class="desc">Test 2</td><td class="monto">$12.000,00</td><td class="doc"><a href="comprobantes/A_Test_2.png" target="_blank" class="doc-link" title="Ver comprobante">&#128196;</a></td></tr>
+<tr class="subtotal"><td colspan="2">Subtotal A &mdash; Gastos Comunes</td><td class="monto">$22.000,00</td><td></td></tr>
+<tr><td class="cat">B</td><td class="desc">Test 3</td><td class="monto">$121.000,00</td><td class="doc"><a href="comprobantes/B_Test_3.png" target="_blank" class="doc-link" title="Ver comprobante">&#128196;</a></td></tr>
+<tr><td class="cat">B</td><td class="desc">Test4</td><td class="monto">$49.999,00</td><td class="doc"></td></tr>
+<tr class="subtotal"><td colspan="2">Subtotal B &mdash; Fuerza Motriz</td><td class="monto">$170.999,00</td><td></td></tr>
+</tbody>
+    <tfoot>
+      <tr class="total-row">
+        <td colspan="2"><strong>TOTAL GENERAL DE GASTOS</strong></td>
+        <td class="monto"><strong>$192.999,00</strong></td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+<footer>Generado por Gestor de Consorcios &nbsp;|&nbsp; 08/03/2026 20:05</footer>
+</div>
+</body>
+</html>
