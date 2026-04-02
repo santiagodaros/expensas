@@ -29,22 +29,24 @@ export function Sidebar() {
   const { consorcioId, consorcioNombre, periodo, setConsorcio, setPeriodo } = useApp();
   const [consorcios, setConsorcios] = useState<ConsorcioItem[]>([]);
   const [showCons, setShowCons] = useState(false);
+  const [loadingCons, setLoadingCons] = useState(false);
   const [appVersion, setAppVersion] = useState("");
 
   useEffect(() => {
     getVersion().then(setAppVersion);
   }, []);
 
-  const fetchConsorcios = () => {
-    fetch(`${API_BASE}/api/consorcios`)
-      .then((r) => r.json())
-      .then((data: ConsorcioItem[]) => {
-        setConsorcios(data);
-        if (data.length > 0 && consorcioId === 0) {
-          setConsorcio(data[0].id, data[0].nombre);
-        }
-      })
-      .catch(() => {});
+  const fetchConsorcios = async () => {
+    setLoadingCons(true);
+    try {
+      const r = await fetch(`${API_BASE}/api/consorcios`);
+      const data: ConsorcioItem[] = await r.json();
+      setConsorcios(data);
+      if (data.length > 0 && consorcioId === 0) {
+        setConsorcio(data[0].id, data[0].nombre);
+      }
+    } catch { /* sin internet o backend no listo */ }
+    finally { setLoadingCons(false); }
   };
 
   useEffect(() => { fetchConsorcios(); }, []);
@@ -78,7 +80,7 @@ export function Sidebar() {
         {/* Consorcio selector */}
         <div className="relative">
           <button
-            onClick={() => { if (!showCons && consorcios.length === 0) fetchConsorcios(); setShowCons(!showCons); }}
+            onClick={() => { if (!showCons) fetchConsorcios(); setShowCons(!showCons); }}
             className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-colors hover:bg-white/5"
             style={{ backgroundColor: "var(--color-surface2)", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
           >
@@ -95,7 +97,7 @@ export function Sidebar() {
               className="absolute left-0 right-0 top-full mt-1 rounded-lg z-50 overflow-hidden"
               style={{ backgroundColor: "var(--color-surface2)", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-dialog)" }}
             >
-              {consorcios.length === 0 ? (
+              {loadingCons ? (
                 <p className="px-3 py-2 text-xs" style={{ color: "var(--color-text2)" }}>Cargando...</p>
               ) : consorcios.map((c) => (
                 <button
