@@ -10,14 +10,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { useApp } from "@/contexts/AppContext";
 import { AlertTriangle, TrendingUp, DollarSign, CheckCircle2, Plus, FileText } from "lucide-react";
-import { open } from "@tauri-apps/plugin-opener";
+import { openPath } from "@tauri-apps/plugin-opener";
 
 const API_BASE = "http://localhost:8000";
 async function openPdf(url: string) {
   const res = await fetch(API_BASE + url);
   if (!res.ok) throw new Error("Error al generar PDF");
   const { path } = await res.json();
-  await open(path);
+  await openPath(path);
 }
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
