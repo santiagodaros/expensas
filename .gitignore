@@ -17,12 +17,18 @@ expensas_pdf/
 frontend/node_modules/
 frontend/dist/
 
+# Compiled sidecar binary — CI rebuilds this from source
+frontend/src-tauri/binaries/
+
 # Rust / Tauri build artifacts
 frontend/src-tauri/target/
 frontend/src-tauri/gen/
 
 # Claude
 .claude/
+
+# Subprojects not part of the Tauri app
+web_reportes/
 
 # Windows
 Thumbs.db
