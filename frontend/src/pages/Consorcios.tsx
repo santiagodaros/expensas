@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { useGet } from "@/hooks/useApi";
 import { Consorcio, ConsorcioCreate, Unidad, UnidadCreate } from "@/types/api";
 import api from "@/lib/api";
@@ -44,6 +45,8 @@ function ConsorcioDialog({ initial, onClose, onSaved }: { initial?: Consorcio; o
     try {
       initial ? await api.put(`/api/consorcios/${initial.id}`, form) : await api.post("/api/consorcios", form);
       onSaved(); onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error desconocido");
     } finally { setSaving(false); }
   };
 
@@ -91,6 +94,8 @@ function UnidadDialog({ consorcioId, initial, onClose, onSaved }: { consorcioId:
     try {
       initial ? await api.put(`/api/unidades/${initial.id}`, form) : await api.post(`/api/consorcios/${consorcioId}/unidades`, form);
       onSaved(); onClose();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error desconocido");
     } finally { setSaving(false); }
   };
 
@@ -142,6 +147,8 @@ export function ConsorciosPage() {
       await api.delete(`/api/consorcios/${id}`);
       if (selected?.id === id) setSelected(null);
       refetchC();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error al eliminar consorcio");
     } finally { setDeletingC(null); }
   };
 
@@ -151,6 +158,8 @@ export function ConsorciosPage() {
     try {
       await api.delete(`/api/unidades/${id}`);
       refetchU();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error al eliminar unidad");
     } finally { setDeletingU(null); }
   };
 
