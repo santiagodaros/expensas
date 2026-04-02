@@ -1,13 +1,24 @@
 """Router: Reportes PDF"""
-import io
 import sqlite3
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from decimal import Decimal, ROUND_HALF_UP
 from fpdf import FPDF
 from api.database import get_db
 
 router = APIRouter(tags=["Reportes"])
+
+
+def _boletas_dir() -> Path:
+    folder = Path.home() / "Documents" / "Expensas" / "Boletas"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _save_pdf(pdf_bytes: bytes, filename: str) -> str:
+    path = _boletas_dir() / filename
+    path.write_bytes(pdf_bytes)
+    return str(path)
 
 
 # -- helpers ------------------------------------------------------------------
@@ -373,12 +384,9 @@ def reporte_general(consorcio_id: int, periodo: str, db: sqlite3.Connection = De
         pagos_ant, pagos_act, periodo, cat_names
     )
     nom      = (cons["nombre"] or "consorcio").replace(" ", "_")
-    filename = f"Expensas_{nom}_{periodo}.pdf"
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"inline; filename=\"{filename}\""} 
-    )
+    filename = f"General_{nom}_{periodo}.pdf"
+    path = _save_pdf(pdf_bytes, filename)
+    return {"path": path, "filename": filename}
 
 
 @router.get("/reportes/boleta/{unidad_id}/{periodo}")
@@ -406,8 +414,5 @@ def reporte_boleta(unidad_id: int, periodo: str, db: sqlite3.Connection = Depend
     )
     nombre_u = (u.get("propietario") or u.get("inquilino") or "UF" + str(u["unidad"])).replace(" ", "_")
     filename = f"UF{u['unidad']}_{nombre_u}_{periodo}.pdf"
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f"inline; filename=\"{filename}\""} 
-    )
+    path = _save_pdf(pdf_bytes, filename)
+    return {"path": path, "filename": filename}
