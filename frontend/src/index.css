@@ -1,0 +1,150 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-bg: #0B0C10;
+  --color-surface: #131419;
+  --color-surface2: #1C1D24;
+  --color-border: #2A2B36;
+  --color-accent: #3B82F6;
+  --color-accent-hover: #2563EB;
+  --color-accent-subtle: rgba(59, 130, 246, 0.12);
+  --color-accent-ghost:  rgba(59, 130, 246, 0.20);
+  --color-text: #F1F1F3;
+  --color-text2: #8B8C99;
+  --color-success: #22C55E;
+  --color-success-subtle: rgba(34, 197, 94, 0.12);
+  --color-danger: #EF4444;
+  --color-danger-subtle:  rgba(239, 68, 68, 0.12);
+  --color-warning: #F59E0B;
+  --color-warning-subtle: rgba(245, 158, 11, 0.12);
+
+  --font-family-sans: "Inter", "system-ui", "sans-serif";
+  --radius-card: 12px;
+
+  --shadow-card:   0 1px 4px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-dialog: 0 24px 64px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family-sans);
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text2);
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ===== STRICT DARK PALETTE — Always dark, no light mode ===== */
+:root {
+  --background: #0B0C10;
+  --foreground: #F1F1F3;
+  --card: #131419;
+  --card-foreground: #F1F1F3;
+  --popover: #1C1D24;
+  --popover-foreground: #F1F1F3;
+  --primary: #3B82F6;
+  --primary-foreground: #F1F1F3;
+  --secondary: #1C1D24;
+  --secondary-foreground: #F1F1F3;
+  --muted: #1C1D24;
+  --muted-foreground: #8B8C99;
+  --accent: #3B82F6;
+  --accent-foreground: #F1F1F3;
+  --destructive: #EF4444;
+  --border: #2A2B36;
+  --input: #1C1D24;
+  --ring: #3B82F6;
+  --chart-1: #3B82F6;
+  --chart-2: #22C55E;
+  --chart-3: #F59E0B;
+  --chart-4: #8B5CF6;
+  --chart-5: #EC4899;
+  --radius: 0.75rem;
+  --sidebar: #131419;
+  --sidebar-foreground: #F1F1F3;
+  --sidebar-primary: #3B82F6;
+  --sidebar-primary-foreground: #F1F1F3;
+  --sidebar-accent: #1C1D24;
+  --sidebar-accent-foreground: #F1F1F3;
+  --sidebar-border: #2A2B36;
+  --sidebar-ring: #3B82F6;
+}
+
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}

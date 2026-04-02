@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.spec
+build/
+dist/
+
+# Data — never commit production data
+*.db
+backups/
+Backup/
+expensas_pdf/
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Rust / Tauri build artifacts
+frontend/src-tauri/target/
+frontend/src-tauri/gen/
+
+# Claude
+.claude/
+
+# Windows
+Thumbs.db
+desktop.ini
+*.bat
