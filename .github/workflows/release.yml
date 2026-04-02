@@ -21,11 +21,10 @@ jobs:
 
       - name: Build API sidecar
         run: |
-          cd api
-          pip install -r requirements.txt pyinstaller
-          pyinstaller --onefile --name api-server main.py
-          New-Item -ItemType Directory -Force -Path ..\frontend\src-tauri\binaries
-          Copy-Item dist\api-server.exe ..\frontend\src-tauri\binaries\api-server-x86_64-pc-windows-msvc.exe
+          pip install -r api/requirements.txt pyinstaller
+          pyinstaller api-server.spec
+          New-Item -ItemType Directory -Force -Path frontend\src-tauri\binaries
+          Copy-Item dist\api-server.exe frontend\src-tauri\binaries\api-server-x86_64-pc-windows-msvc.exe
         shell: pwsh
 
       - name: Setup Node.js
