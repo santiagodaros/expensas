@@ -11,8 +11,8 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { useApp } from "@/contexts/AppContext";
-
 const API_BASE = "http://localhost:8000";
 
 const NAV_ITEMS = [
@@ -39,7 +39,7 @@ export function Sidebar() {
   const fetchConsorcios = async () => {
     setLoadingCons(true);
     try {
-      const r = await fetch(`${API_BASE}/api/consorcios`);
+      const r = await tauriFetch(`${API_BASE}/api/consorcios`);
       const data: ConsorcioItem[] = await r.json();
       setConsorcios(data);
       if (data.length > 0 && consorcioId === 0) {
