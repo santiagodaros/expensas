@@ -35,7 +35,7 @@ export function Sidebar() {
     getVersion().then(setAppVersion);
   }, []);
 
-  useEffect(() => {
+  const fetchConsorcios = () => {
     fetch(`${API_BASE}/api/consorcios`)
       .then((r) => r.json())
       .then((data: ConsorcioItem[]) => {
@@ -45,7 +45,9 @@ export function Sidebar() {
         }
       })
       .catch(() => {});
-  }, []);
+  };
+
+  useEffect(() => { fetchConsorcios(); }, []);
 
   const periodoLabel = periodo
     ? new Date(periodo + "-02").toLocaleDateString("es-AR", { month: "long", year: "numeric" })
@@ -76,7 +78,7 @@ export function Sidebar() {
         {/* Consorcio selector */}
         <div className="relative">
           <button
-            onClick={() => setShowCons(!showCons)}
+            onClick={() => { if (!showCons && consorcios.length === 0) fetchConsorcios(); setShowCons(!showCons); }}
             className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-colors hover:bg-white/5"
             style={{ backgroundColor: "var(--color-surface2)", border: "1px solid var(--color-border)", color: "var(--color-text)" }}
           >
@@ -86,12 +88,16 @@ export function Sidebar() {
             </div>
             <ChevronDown size={12} style={{ color: "var(--color-text2)", flexShrink: 0 }} />
           </button>
-          {showCons && consorcios.length > 0 && (
+          {showCons && (
+            <>
+            <div className="fixed inset-0 z-40" onClick={() => setShowCons(false)} />
             <div
               className="absolute left-0 right-0 top-full mt-1 rounded-lg z-50 overflow-hidden"
               style={{ backgroundColor: "var(--color-surface2)", border: "1px solid var(--color-border)", boxShadow: "var(--shadow-dialog)" }}
             >
-              {consorcios.map((c) => (
+              {consorcios.length === 0 ? (
+                <p className="px-3 py-2 text-xs" style={{ color: "var(--color-text2)" }}>Cargando...</p>
+              ) : consorcios.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => { setConsorcio(c.id, c.nombre); setShowCons(false); }}
@@ -102,6 +108,7 @@ export function Sidebar() {
                 </button>
               ))}
             </div>
+            </>
           )}
         </div>
 
