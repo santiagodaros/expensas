@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build API sidecar
+        run: |
+          cd api
+          pip install -r requirements.txt pyinstaller
+          pyinstaller --onefile --name api-server main.py
+          New-Item -ItemType Directory -Force -Path ..\frontend\src-tauri\binaries
+          Copy-Item dist\api-server.exe ..\frontend\src-tauri\binaries\api-server-x86_64-pc-windows-msvc.exe
+        shell: pwsh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          projectPath: frontend
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Gestor de Consorcios ${{ github.ref_name }}'
+          releaseBody: |
+            ## Cambios en esta versión
+
+            Descargá el instalador `.exe` de abajo para actualizar.
+          releaseDraft: false
+          prerelease: false
+          updaterJsonKeepUniversal: true
