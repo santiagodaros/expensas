@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import {
   LayoutDashboard,
   Building2,
@@ -28,6 +29,11 @@ export function Sidebar() {
   const { consorcioId, consorcioNombre, periodo, setConsorcio, setPeriodo } = useApp();
   const [consorcios, setConsorcios] = useState<ConsorcioItem[]>([]);
   const [showCons, setShowCons] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+
+  useEffect(() => {
+    getVersion().then(setAppVersion);
+  }, []);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/consorcios`)
@@ -146,7 +152,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="px-5 py-4 text-xs" style={{ color: "var(--color-text2)", borderTop: "1px solid var(--color-border)" }}>
-        v2.0.0 - Tauri
+        {appVersion ? `v${appVersion}` : ""}
       </div>
     </aside>
   );
