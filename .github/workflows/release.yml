@@ -22,7 +22,7 @@ jobs:
       - name: Build API sidecar
         run: |
           pip install -r api/requirements.txt pyinstaller
-          pyinstaller api-server.spec
+          pyinstaller --onefile --name api-server --paths . api_server.py
           New-Item -ItemType Directory -Force -Path frontend\src-tauri\binaries
           Copy-Item dist\api-server.exe frontend\src-tauri\binaries\api-server-x86_64-pc-windows-msvc.exe
         shell: pwsh
