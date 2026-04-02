@@ -11,10 +11,11 @@ import { Input } from "@/components/ui/input";
 import { useApp } from "@/contexts/AppContext";
 import { AlertTriangle, TrendingUp, DollarSign, CheckCircle2, Plus, FileText } from "lucide-react";
 import { openPath } from "@tauri-apps/plugin-opener";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 const API_BASE = "http://localhost:8000";
 async function openPdf(url: string) {
-  const res = await fetch(API_BASE + url);
+  const res = await tauriFetch(API_BASE + url);
   if (!res.ok) throw new Error("Error al generar PDF");
   const { path } = await res.json();
   await openPath(path);

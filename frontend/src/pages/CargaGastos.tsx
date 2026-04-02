@@ -10,15 +10,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDropzone } from "react-dropzone";
 import { UploadCloud, Plus, Receipt, FileText, Pencil, Trash2, X } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
+import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
+import { openPath } from "@tauri-apps/plugin-opener";
 
 const API_BASE = "http://localhost:8000";
 async function openPdf(url: string) {
-  try {
-    const res = await fetch(API_BASE + url);
-    if (!res.ok) throw new Error("Error al generar PDF");
-    const blob = await res.blob();
-    window.open(URL.createObjectURL(blob), "_blank");
-  } catch { /* toast shown by caller */ }
+  const res = await tauriFetch(API_BASE + url);
+  if (!res.ok) throw new Error("Error al generar PDF");
+  const { path } = await res.json();
+  await openPath(path);
 }
 
 const fmt = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
