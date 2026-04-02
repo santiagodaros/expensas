@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "sonner";
 
 export function useUpdater() {
@@ -46,10 +47,8 @@ async function installUpdate(update: Awaited<ReturnType<typeof check>>) {
           toast.loading(`Descargando... ${pct}%`, { id: toastId });
         }
       } else if (event.event === "Finished") {
-        toast.success("¡Actualización instalada! Reiniciá la app para aplicarla.", {
-          id: toastId,
-          duration: Infinity,
-        });
+        toast.success("Actualización lista. Reiniciando...", { id: toastId });
+        await relaunch();
       }
     });
   } catch {

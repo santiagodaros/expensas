@@ -11,6 +11,7 @@
                         "shell:allow-execute",
                         "shell:allow-kill",
                         "updater:default",
+                        "process:allow-relaunch",
                         {
                             "identifier": "http:default",
                             "allow": [

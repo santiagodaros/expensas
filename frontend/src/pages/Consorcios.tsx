@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useGet } from "@/hooks/useApi";
 import { Consorcio, ConsorcioCreate, Unidad, UnidadCreate } from "@/types/api";
+import { useApp } from "@/contexts/AppContext";
 import api from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -130,6 +131,7 @@ function UnidadDialog({ consorcioId, initial, onClose, onSaved }: { consorcioId:
 }
 
 export function ConsorciosPage() {
+  const { setConsorcio } = useApp();
   const { data: consorcios, loading: loadingC, error: errorC, refetch: refetchC } = useGet<Consorcio[]>("/api/consorcios");
   const [selected, setSelected] = useState<Consorcio | null>(null);
   const { data: unidades, loading: loadingU, refetch: refetchU } = useGet<Unidad[]>(
@@ -192,7 +194,7 @@ export function ConsorciosPage() {
           {(consorcios ?? []).map((c) => {
             const isActive = selected?.id === c.id;
             return (
-              <div key={c.id} onClick={() => setSelected(isActive ? null : c)}
+              <div key={c.id} onClick={() => { const next = isActive ? null : c; setSelected(next); if (next) setConsorcio(next.id, next.nombre); }}
                 className="rounded-xl border p-4 cursor-pointer transition-all"
                 style={{ backgroundColor: isActive ? "rgba(59,130,246,0.08)" : "var(--color-surface)", borderColor: isActive ? "rgba(59,130,246,0.4)" : "var(--color-border)" }}>
                 <div className="flex items-start justify-between gap-2">
