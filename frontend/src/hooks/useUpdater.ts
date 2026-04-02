@@ -46,11 +46,11 @@ async function installUpdate(update: Awaited<ReturnType<typeof check>>) {
           const pct = Math.round((downloaded / total) * 100);
           toast.loading(`Descargando... ${pct}%`, { id: toastId });
         }
-      } else if (event.event === "Finished") {
-        toast.success("Actualización lista. Reiniciando...", { id: toastId });
-        await relaunch();
       }
     });
+
+    toast.success("Actualización lista. Reiniciando...", { id: toastId });
+    await relaunch();
   } catch {
     toast.error("Error al instalar la actualización.", { id: toastId });
   }
