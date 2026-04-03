@@ -395,6 +395,7 @@ def reporte_general(consorcio_id: int, periodo: str, db: sqlite3.Connection = De
 
 @router.get("/reportes/boleta/{unidad_id}/{periodo}")
 def reporte_boleta(unidad_id: int, periodo: str, db: sqlite3.Connection = Depends(get_db)):
+    import traceback
     u = db.execute("SELECT * FROM unidades WHERE id=?", (unidad_id,)).fetchone()
     if not u:
         raise HTTPException(404, "Unidad no encontrada")
@@ -412,11 +413,14 @@ def reporte_boleta(unidad_id: int, periodo: str, db: sqlite3.Connection = Depend
         "B": _get_cfg(db, "nombre_cat_b", "Fuerza Motriz"),
         "C": _get_cfg(db, "nombre_cat_c", "Locales"),
     }
-    pdf_bytes = _pdf_boleta(
-        dict(cons), dict(u), [dict(g) for g in gastos],
-        saldo_ant, cobranza, telec, reserva, redondeo, periodo, cat_names
-    )
-    nombre_u = (u.get("propietario") or u.get("inquilino") or "UF" + str(u["unidad"])).replace(" ", "_")
-    filename = f"UF{u['unidad']}_{nombre_u}_{periodo}.pdf"
-    path = _save_pdf(pdf_bytes, filename)
-    return {"path": path, "filename": filename}
+    try:
+        pdf_bytes = _pdf_boleta(
+            dict(cons), dict(u), [dict(g) for g in gastos],
+            saldo_ant, cobranza, telec, reserva, redondeo, periodo, cat_names
+        )
+        nombre_u = (u.get("propietario") or u.get("inquilino") or "UF" + str(u["unidad"])).replace(" ", "_")
+        filename = f"UF{u['unidad']}_{nombre_u}_{periodo}.pdf"
+        path = _save_pdf(pdf_bytes, filename)
+        return {"path": path, "filename": filename}
+    except Exception as e:
+        raise HTTPException(500, detail=f"{type(e).__name__}: {e}\n{traceback.format_exc()}")

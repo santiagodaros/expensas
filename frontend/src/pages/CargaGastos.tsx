@@ -153,7 +153,7 @@ export function CargaGastosPage() {
           <div className="px-4 py-3 border-t flex items-center justify-between" style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface2)" }}>
             <span className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>Total del mes</span>
             <span className="text-lg font-bold" style={{ color: "var(--color-accent)" }}>{fmt(totalGeneral)}</span>
-            <Button size="sm" onClick={() => { toast.promise(openPdf(`/api/reportes/general/${CONSORCIO}/${PERIODO}`), { loading: "Generando PDF...", success: "PDF abierto", error: "Error al generar PDF" }); }} className="h-7 px-3 text-xs gap-1" style={{ backgroundColor: "var(--color-accent-subtle)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}><FileText size={12} />PDF General</Button>
+            <Button size="sm" onClick={() => { toast.promise(openPdf(`/api/reportes/general/${CONSORCIO}/${PERIODO}`), { loading: "Generando PDF...", success: "PDF abierto", error: (e: unknown) => e instanceof Error ? e.message : "Error al generar PDF" }); }} className="h-7 px-3 text-xs gap-1" style={{ backgroundColor: "var(--color-accent-subtle)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}><FileText size={12} />PDF General</Button>
           </div>
         </div>
       </div>
