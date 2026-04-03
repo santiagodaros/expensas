@@ -45,6 +45,14 @@ export interface UnidadCreate {
   email?: string;
 }
 
+export interface UnidadBatchOut {
+  ok: boolean;
+  message: string;
+  insertados: number;
+  actualizados: number;
+  sin_cambios: number;
+}
+
 // ─── Gastos ───────────────────────────────────────────────────────────────────
 export interface Gasto {
   id: number;

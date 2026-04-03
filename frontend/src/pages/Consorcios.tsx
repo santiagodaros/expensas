@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { useGet } from "@/hooks/useApi";
-import { Consorcio, ConsorcioCreate, Unidad, UnidadCreate } from "@/types/api";
+import { Consorcio, ConsorcioCreate, Unidad, UnidadCreate, UnidadBatchOut } from "@/types/api";
 import { useApp } from "@/contexts/AppContext";
 import api from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Building2, Plus, Pencil, Trash2, Users, ChevronRight, MapPin, Hash } from "lucide-react";
+import { Building2, Plus, Pencil, Trash2, Users, ChevronRight, MapPin, Hash, UploadCloud } from "lucide-react";
+import { useDropzone } from "react-dropzone";
+import Papa from "papaparse";
+import * as XLSX from "xlsx";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -28,6 +31,214 @@ function TInput(props: React.ComponentProps<typeof Input>) {
     />
   );
 }
+
+// ─── IMPORTAR PADRÓN — helpers ────────────────────────────────────────────────
+
+function normalizeHeader(h: string): string {
+  return h
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\s._\-/]+/g, "");
+}
+
+const HEADER_MAP: Record<string, keyof UnidadCreate> = {
+  unidad: "unidad", nro: "unidad", numero: "unidad", numero_de_unidad: "unidad",
+  piso: "piso",
+  dpto: "dpto", depto: "dpto", departamento: "dpto",
+  propietario: "propietario", prop: "propietario", dueno: "propietario", titular: "propietario",
+  inquilino: "inquilino", inq: "inquilino", locatario: "inquilino",
+  coefa: "coef_a", coef_a: "coef_a", coeficientea: "coef_a", coeficiente: "coef_a", coef: "coef_a",
+  coefb: "coef_b", coef_b: "coef_b", coeficienteb: "coef_b",
+  coefc: "coef_c", coef_c: "coef_c", coeficientec: "coef_c",
+  email: "email", mail: "email", correo: "email", correoelectronico: "email",
+};
+
+function parseRows(rawRows: Record<string, any>[]): UnidadCreate[] {
+  const units = rawRows
+    .filter((row) => Object.values(row).some((v) => v !== "" && v != null))
+    .map((row) => {
+      const mapped: Record<string, any> = {};
+      for (const [key, val] of Object.entries(row)) {
+        const norm = normalizeHeader(String(key));
+        const field = HEADER_MAP[norm];
+        if (field) mapped[field] = val;
+      }
+      const toNum = (v: any) => parseFloat(String(v ?? "0")) || 0;
+      return {
+        unidad: String(mapped.unidad ?? "").trim(),
+        piso: String(mapped.piso ?? "").trim(),
+        dpto: String(mapped.dpto ?? "").trim(),
+        propietario: String(mapped.propietario ?? "").trim() || undefined,
+        inquilino: String(mapped.inquilino ?? "").trim() || undefined,
+        coef_a: toNum(mapped.coef_a),
+        coef_b: toNum(mapped.coef_b),
+        coef_c: toNum(mapped.coef_c),
+        email: String(mapped.email ?? "").trim() || undefined,
+      };
+    })
+    .filter((u) => u.unidad !== "");
+
+  // Detectar escala: el sistema guarda en base 100 (porcentaje).
+  // Si la suma de coef_a es ≈ 1, el Excel usa decimales → convertir multiplicando por 100.
+  const sumA = units.reduce((acc, u) => acc + u.coef_a, 0);
+  if (sumA > 0 && Math.abs(sumA - 1) < 0.1) {
+    return units.map((u) => ({
+      ...u,
+      coef_a: parseFloat((u.coef_a * 100).toFixed(6)),
+      coef_b: parseFloat((u.coef_b * 100).toFixed(6)),
+      coef_c: parseFloat((u.coef_c * 100).toFixed(6)),
+    }));
+  }
+  return units;
+}
+
+// ─── IMPORTAR PADRÓN — componente ────────────────────────────────────────────
+
+function ImportarPadronDialog({
+  consorcioId,
+  onClose,
+  onSaved,
+}: {
+  consorcioId: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [parsed, setParsed] = useState<UnidadCreate[] | null>(null);
+  const [fileName, setFileName] = useState<string>("");
+  const [coefSum, setCoefSum] = useState<number>(0);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState<UnidadBatchOut | null>(null);
+
+  const processFile = useCallback((file: File) => {
+    setFileName(file.name);
+    setParsed(null);
+    setResult(null);
+
+    const handleRows = (rawRows: Record<string, any>[]) => {
+      const units = parseRows(rawRows);
+      const sum = units.reduce((acc, u) => acc + u.coef_a, 0);
+      setParsed(units);
+      setCoefSum(sum);
+    };
+
+    if (file.name.toLowerCase().endsWith(".csv")) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (res) => handleRows(res.data as Record<string, any>[]),
+      });
+    } else {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const wb = XLSX.read(e.target?.result, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: "" });
+        handleRows(rows);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: {
+      "text/csv": [".csv"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+    },
+    maxFiles: 1,
+    onDrop: (accepted) => { if (accepted[0]) processFile(accepted[0]); },
+  });
+
+  // Validación: la suma debe ser ≈ 100 (base porcentaje)
+  const coefOk = parsed && parsed.length > 0 && Math.abs(coefSum - 100) < 2;
+  const coefWarning = parsed && parsed.length > 0 && !coefOk;
+
+  const handleImport = async () => {
+    if (!parsed || parsed.length === 0) return;
+    setImporting(true);
+    try {
+      const res = await api.post(`/api/consorcios/${consorcioId}/unidades/batch`, { unidades: parsed });
+      const data = res.data as UnidadBatchOut;
+      setResult(data);
+      toast.success(data.message);
+      onSaved();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error al importar");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text)", maxWidth: 480 }}>
+        <DialogHeader>
+          <DialogTitle style={{ color: "var(--color-text)" }}>Importar Padrón</DialogTitle>
+        </DialogHeader>
+
+        <div
+          {...getRootProps()}
+          className="rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-colors"
+          style={{
+            borderColor: isDragActive ? "var(--color-accent)" : "var(--color-border)",
+            backgroundColor: isDragActive ? "rgba(59,130,246,0.05)" : "var(--color-surface2)",
+          }}
+        >
+          <input {...getInputProps()} />
+          <UploadCloud size={32} className="mx-auto mb-3" style={{ color: "var(--color-text2)" }} />
+          {fileName ? (
+            <p className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{fileName}</p>
+          ) : (
+            <>
+              <p className="text-sm" style={{ color: "var(--color-text)" }}>
+                {isDragActive ? "Soltá el archivo acá" : "Arrastrá o hacé click para seleccionar"}
+              </p>
+              <p className="text-xs mt-1" style={{ color: "var(--color-text2)" }}>Soporta .csv y .xlsx</p>
+            </>
+          )}
+        </div>
+
+        {parsed && (
+          <div className="flex flex-col gap-2 text-xs">
+            <div className="flex items-center justify-between px-1">
+              <span style={{ color: "var(--color-text2)" }}>{parsed.length} unidades detectadas</span>
+              <span style={{ color: coefOk ? "#22c55e" : "var(--color-danger)" }}>
+                Suma Coef A = {coefSum.toFixed(2)}% {coefOk ? "✓" : "⚠"}
+              </span>
+            </div>
+            {coefWarning && (
+              <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: "rgba(234,179,8,0.1)", color: "#ca8a04", border: "1px solid rgba(234,179,8,0.3)" }}>
+                La suma de coeficientes A es {coefSum.toFixed(2)}%, debería ser 100%. Podés continuar igual, pero revisá el archivo.
+              </div>
+            )}
+          </div>
+        )}
+
+        {result && (
+          <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: "rgba(34,197,94,0.1)", color: "#16a34a", border: "1px solid rgba(34,197,94,0.3)" }}>
+            {result.insertados} insertadas · {result.actualizados} actualizadas · {result.sin_cambios} sin cambios
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} style={{ color: "var(--color-text2)" }}>
+            {result ? "Cerrar" : "Cancelar"}
+          </Button>
+          {!result && (
+            <Button
+              onClick={handleImport}
+              disabled={!parsed || parsed.length === 0 || importing}
+              style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}
+            >
+              {importing ? "Importando..." : `Importar ${parsed?.length ?? 0} unidades`}
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const EMPTY_C: ConsorcioCreate = { nombre: "", cuit: "", direccion: "", unidades: 0, reserva_pct: 5, dia_vto: 10 };
 
@@ -139,6 +350,7 @@ export function ConsorciosPage() {
   );
   const [consorcioDialog, setConsorcioDialog] = useState<{ open: boolean; edit?: Consorcio }>({ open: false });
   const [unidadDialog, setUnidadDialog] = useState<{ open: boolean; edit?: Unidad }>({ open: false });
+  const [importDialog, setImportDialog] = useState(false);
   const [deletingC, setDeletingC] = useState<number | null>(null);
   const [deletingU, setDeletingU] = useState<number | null>(null);
 
@@ -256,10 +468,16 @@ export function ConsorciosPage() {
                 <h2 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>{selected.nombre}</h2>
                 <p className="text-xs mt-0.5" style={{ color: "var(--color-text2)" }}>{(unidades ?? []).length} unidades registradas</p>
               </div>
-              <Button size="sm" onClick={() => setUnidadDialog({ open: true })} className="h-7 px-3 text-xs gap-1"
-                style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}>
-                <Plus size={12} /> Nueva unidad
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={() => setImportDialog(true)} className="h-7 px-3 text-xs gap-1"
+                  style={{ backgroundColor: "rgba(255,255,255,0.05)", color: "var(--color-text2)", border: "1px solid var(--color-border)" }}>
+                  <UploadCloud size={12} /> Importar Padrón
+                </Button>
+                <Button size="sm" onClick={() => setUnidadDialog({ open: true })} className="h-7 px-3 text-xs gap-1"
+                  style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}>
+                  <Plus size={12} /> Nueva unidad
+                </Button>
+              </div>
             </div>
             <div className="flex-1 rounded-xl border overflow-hidden flex flex-col"
               style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
@@ -324,6 +542,13 @@ export function ConsorciosPage() {
       )}
       {unidadDialog.open && selected && (
         <UnidadDialog consorcioId={selected.id} initial={unidadDialog.edit} onClose={() => setUnidadDialog({ open: false })} onSaved={refetchU} />
+      )}
+      {importDialog && selected && (
+        <ImportarPadronDialog
+          consorcioId={selected.id}
+          onClose={() => setImportDialog(false)}
+          onSaved={() => { setImportDialog(false); refetchU(); }}
+        />
       )}
     </div>
   );

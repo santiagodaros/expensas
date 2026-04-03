@@ -44,6 +44,16 @@ class UnidadOut(UnidadBase):
     consorcio_id: int
     model_config = {"from_attributes": True}
 
+class UnidadBatchIn(BaseModel):
+    unidades: List[UnidadCreate]
+
+class UnidadBatchOut(BaseModel):
+    ok: bool
+    message: str
+    insertados: int
+    actualizados: int
+    sin_cambios: int
+
 
 # ─── GASTOS ────────────────────────────────────────────────────────────────────
 

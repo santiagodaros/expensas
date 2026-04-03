@@ -14,7 +14,7 @@ from typing import List
 import sqlite3
 
 from api.database import get_db, rows_to_list, row_to_dict
-from api.schemas import ConsorcioOut, ConsorcioCreate, UnidadOut, UnidadCreate, MessageOut
+from api.schemas import ConsorcioOut, ConsorcioCreate, UnidadOut, UnidadCreate, MessageOut, UnidadBatchIn, UnidadBatchOut
 
 router = APIRouter(tags=["Consorcios"])
 
@@ -103,6 +103,59 @@ def update_unidad(uid: int, body: UnidadCreate, db: sqlite3.Connection = Depends
 def delete_unidad(uid: int, db: sqlite3.Connection = Depends(get_db)):
     db.execute("DELETE FROM unidades WHERE id=?", (uid,))
     return {"ok": True, "message": f"Unidad {uid} eliminada"}
+
+
+@router.post("/consorcios/{cid}/unidades/batch", response_model=UnidadBatchOut, status_code=200)
+def batch_upsert_unidades(cid: int, body: UnidadBatchIn, db: sqlite3.Connection = Depends(get_db)):
+    rows = db.execute("SELECT * FROM unidades WHERE consorcio_id=?", (cid,)).fetchall()
+    existentes: dict = {row_to_dict(r)["unidad"]: row_to_dict(r) for r in rows}
+
+    insertados = 0
+    actualizados = 0
+    sin_cambios = 0
+
+    for u in body.unidades:
+        # Normalizar strings vacíos a None para comparación consistente con la DB
+        prop = u.propietario or None
+        inq = u.inquilino or None
+        email = u.email or None
+
+        if u.unidad in existentes:
+            ex = existentes[u.unidad]
+            changed = (
+                ex["piso"] != u.piso
+                or ex["dpto"] != u.dpto
+                or ex["propietario"] != prop
+                or ex["inquilino"] != inq
+                or abs((ex["coef_a"] or 0.0) - u.coef_a) > 1e-6
+                or abs((ex["coef_b"] or 0.0) - u.coef_b) > 1e-6
+                or abs((ex["coef_c"] or 0.0) - u.coef_c) > 1e-6
+                or ex["email"] != email
+            )
+            if changed:
+                db.execute(
+                    "UPDATE unidades SET piso=?,dpto=?,propietario=?,inquilino=?,coef_a=?,coef_b=?,coef_c=?,email=? "
+                    "WHERE consorcio_id=? AND unidad=?",
+                    (u.piso, u.dpto, prop, inq, u.coef_a, u.coef_b, u.coef_c, email, cid, u.unidad)
+                )
+                actualizados += 1
+            else:
+                sin_cambios += 1
+        else:
+            db.execute(
+                "INSERT INTO unidades(consorcio_id,unidad,piso,dpto,propietario,inquilino,coef_a,coef_b,coef_c,email) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (cid, u.unidad, u.piso, u.dpto, prop, inq, u.coef_a, u.coef_b, u.coef_c, email)
+            )
+            insertados += 1
+
+    return {
+        "ok": True,
+        "message": f"Importación completa: {insertados} nuevas, {actualizados} actualizadas, {sin_cambios} sin cambios.",
+        "insertados": insertados,
+        "actualizados": actualizados,
+        "sin_cambios": sin_cambios,
+    }
 
 
 # ─── PERIODOS disponibles para un consorcio ────────────────────────────────────
