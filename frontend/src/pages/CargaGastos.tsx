@@ -16,7 +16,11 @@ import { openPath } from "@tauri-apps/plugin-opener";
 const API_BASE = "http://localhost:8000";
 async function openPdf(url: string) {
   const res = await tauriFetch(API_BASE + url);
-  if (!res.ok) throw new Error("Error al generar PDF");
+  if (!res.ok) {
+    let detail = "Error al generar PDF";
+    try { const body = await res.json(); detail = body.detail ?? detail; } catch {}
+    throw new Error(detail);
+  }
   const { path } = await res.json();
   await openPath(path);
 }

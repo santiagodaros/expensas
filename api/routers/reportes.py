@@ -368,6 +368,7 @@ def _load_pagos(db, cid: int, periodo: str):
 
 @router.get("/reportes/general/{consorcio_id}/{periodo}")
 def reporte_general(consorcio_id: int, periodo: str, db: sqlite3.Connection = Depends(get_db)):
+    import traceback
     cons = db.execute("SELECT * FROM consorcios WHERE id=?", (consorcio_id,)).fetchone()
     if not cons:
         raise HTTPException(404, "Consorcio no encontrado")
@@ -379,14 +380,17 @@ def reporte_general(consorcio_id: int, periodo: str, db: sqlite3.Connection = De
         "B": _get_cfg(db, "nombre_cat_b", "Fuerza Motriz"),
         "C": _get_cfg(db, "nombre_cat_c", "Locales"),
     }
-    pdf_bytes = _pdf_general(
-        dict(cons), [dict(u) for u in unis], [dict(g) for g in gastos],
-        pagos_ant, pagos_act, periodo, cat_names
-    )
-    nom      = (cons["nombre"] or "consorcio").replace(" ", "_")
-    filename = f"General_{nom}_{periodo}.pdf"
-    path = _save_pdf(pdf_bytes, filename)
-    return {"path": path, "filename": filename}
+    try:
+        pdf_bytes = _pdf_general(
+            dict(cons), [dict(u) for u in unis], [dict(g) for g in gastos],
+            pagos_ant, pagos_act, periodo, cat_names
+        )
+        nom      = (cons["nombre"] or "consorcio").replace(" ", "_")
+        filename = f"General_{nom}_{periodo}.pdf"
+        path = _save_pdf(pdf_bytes, filename)
+        return {"path": path, "filename": filename}
+    except Exception as e:
+        raise HTTPException(500, detail=f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
 
 
 @router.get("/reportes/boleta/{unidad_id}/{periodo}")
