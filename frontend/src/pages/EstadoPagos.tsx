@@ -17,8 +17,12 @@ const API_BASE = "http://localhost:8000";
 async function openPdf(url: string) {
   const res = await tauriFetch(API_BASE + url);
   if (!res.ok) {
-    let detail = "Error al generar PDF";
-    try { const body = await res.json(); detail = body.detail ?? detail; } catch {}
+    let detail = `HTTP ${res.status}`;
+    try {
+      const text = await res.text();
+      try { const body = JSON.parse(text); detail = body.detail ?? text.slice(0, 300); }
+      catch { detail = text.slice(0, 300); }
+    } catch {}
     throw new Error(detail);
   }
   const { path } = await res.json();
