@@ -6,15 +6,8 @@ import { DashboardPage } from "@/pages/Dashboard";
 import { EstadoPagosPage } from "@/pages/EstadoPagos";
 import { CargaGastosPage } from "@/pages/CargaGastos";
 import { ConsorciosPage } from "@/pages/Consorcios";
+import { ConfiguracionPage } from "@/pages/Configuracion";
 import { useUpdater } from "@/hooks/useUpdater";
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="flex items-center justify-center h-64">
-      <p className="text-sm" style={{ color: "var(--color-text2)" }}>{title} - Proximamente</p>
-    </div>
-  );
-}
 
 export default function App() {
   useUpdater();
@@ -29,7 +22,7 @@ export default function App() {
           <Route path="consorcios" element={<ConsorciosPage />} />
           <Route path="gastos" element={<CargaGastosPage />} />
           <Route path="pagos" element={<EstadoPagosPage />} />
-          <Route path="config" element={<Placeholder title="Configuracion" />} />
+          <Route path="config" element={<ConfiguracionPage />} />
         </Route>
       </Routes>
       </BrowserRouter>

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List
 import sqlite3
 from api.database import get_db, rows_to_list, row_to_dict
-from api.schemas import GastoOut, GastoCreate, GastoBatchIn, GastoUpdate, PagoRegistrar, PagosResumenOut, PagoUnitRow, MessageOut
+from api.schemas import GastoOut, GastoCreate, GastoBatchIn, GastoUpdate, PagoRegistrar, PagosResumenOut, PagoUnitRow, MessageOut, GastoParticularOut, GastoParticularCreate
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -39,8 +39,8 @@ def get_gastos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlit
 @router.post("/finanzas/gastos", response_model=GastoOut, status_code=201)
 def create_gasto(consorcio_id: int, periodo: str, body: GastoCreate, db: sqlite3.Connection = Depends(get_db)):
     cur = db.execute(
-        "INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,comprobante_path) VALUES(?,?,?,?,?,?)",
-        (consorcio_id, periodo, body.categoria, body.descripcion, body.monto, body.comprobante_path)
+        "INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,tipo,comprobante_path) VALUES(?,?,?,?,?,?,?)",
+        (consorcio_id, periodo, body.categoria, body.descripcion, body.monto, body.tipo, body.comprobante_path)
     )
     row = db.execute("SELECT * FROM gastos WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -50,8 +50,8 @@ def create_gasto(consorcio_id: int, periodo: str, body: GastoCreate, db: sqlite3
 def batch_gastos(body: GastoBatchIn, db: sqlite3.Connection = Depends(get_db)):
     db.execute("DELETE FROM gastos WHERE consorcio_id=? AND periodo=?", (body.consorcio_id, body.periodo))
     for g in body.gastos:
-        db.execute("INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,comprobante_path) VALUES(?,?,?,?,?,?)",
-                   (body.consorcio_id, body.periodo, g.categoria, g.descripcion, g.monto, g.comprobante_path))
+        db.execute("INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,tipo,comprobante_path) VALUES(?,?,?,?,?,?,?)",
+                   (body.consorcio_id, body.periodo, g.categoria, g.descripcion, g.monto, g.tipo, g.comprobante_path))
     return {"ok": True, "message": f"{len(body.gastos)} gastos guardados para {body.periodo}"}
 
 @router.delete("/finanzas/gastos/{gid}", response_model=MessageOut)
@@ -61,9 +61,39 @@ def delete_gasto(gid: int, db: sqlite3.Connection = Depends(get_db)):
 
 @router.put("/finanzas/gastos/{gid}", response_model=MessageOut)
 def update_gasto(gid: int, body: GastoUpdate, db: sqlite3.Connection = Depends(get_db)):
-    db.execute("UPDATE gastos SET categoria=?, descripcion=?, monto=? WHERE id=?",
-               (body.categoria, body.descripcion, body.monto, gid))
+    db.execute("UPDATE gastos SET categoria=?, descripcion=?, monto=?, tipo=? WHERE id=?",
+               (body.categoria, body.descripcion, body.monto, body.tipo, gid))
     return {"ok": True, "message": f"Gasto {gid} actualizado"}
+
+
+# GASTOS PARTICULARES
+@router.get("/finanzas/gastos_particulares", response_model=List[GastoParticularOut])
+def get_gastos_particulares(consorcio: int = Query(...), periodo: str = Query(...), db: sqlite3.Connection = Depends(get_db)):
+    rows = db.execute(
+        "SELECT * FROM gastos_particulares WHERE consorcio_id=? AND periodo=? ORDER BY unidad_id, descripcion",
+        (consorcio, periodo)
+    ).fetchall()
+    return rows_to_list(rows)
+
+@router.post("/finanzas/gastos_particulares", response_model=GastoParticularOut, status_code=201)
+def create_gasto_particular(consorcio_id: int, periodo: str, body: GastoParticularCreate, db: sqlite3.Connection = Depends(get_db)):
+    cur = db.execute(
+        "INSERT INTO gastos_particulares(consorcio_id,periodo,unidad_id,descripcion,monto) VALUES(?,?,?,?,?)",
+        (consorcio_id, periodo, body.unidad_id, body.descripcion, body.monto)
+    )
+    row = db.execute("SELECT * FROM gastos_particulares WHERE id=?", (cur.lastrowid,)).fetchone()
+    return dict(row)
+
+@router.delete("/finanzas/gastos_particulares/{gid}", response_model=MessageOut)
+def delete_gasto_particular(gid: int, db: sqlite3.Connection = Depends(get_db)):
+    db.execute("DELETE FROM gastos_particulares WHERE id=?", (gid,))
+    return {"ok": True, "message": f"Gasto particular {gid} eliminado"}
+
+@router.put("/finanzas/gastos_particulares/{gid}", response_model=MessageOut)
+def update_gasto_particular(gid: int, body: GastoParticularCreate, db: sqlite3.Connection = Depends(get_db)):
+    db.execute("UPDATE gastos_particulares SET unidad_id=?, descripcion=?, monto=? WHERE id=?",
+               (body.unidad_id, body.descripcion, body.monto, gid))
+    return {"ok": True, "message": f"Gasto particular {gid} actualizado"}
 
 # PAGOS
 @router.get("/finanzas/pagos", response_model=PagosResumenOut)
@@ -91,6 +121,8 @@ def get_pagos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlite
         uid = u["id"]; u_d = dict(u)
         ca, cb, cc = _tf(u_d.get("coef_a")), _tf(u_d.get("coef_b")), _tf(u_d.get("coef_c"))
         imp_mes = tot_a*ca/100.0 + tot_b*cb/100.0 + tot_c*cc/100.0
+        part = db.execute("SELECT COALESCE(SUM(monto),0) FROM gastos_particulares WHERE consorcio_id=? AND periodo=? AND unidad_id=?", (cid, per, uid)).fetchone()[0]
+        imp_mes += _tf(part)
         pa = p_ant.get(uid, {}); pc = p_act.get(uid, {})
         saldo_ant = max(0.0, _tf(pa.get("monto_deuda", 0.0))) if pa else _tf(pc.get("saldo_inicial", 0.0))
         monto_rec = _tf(pc.get("monto_recibido", 0.0)); telec = _tf(pc.get("telec", 0.0))
@@ -134,6 +166,8 @@ def registrar_pago(body: PagoRegistrar, db: sqlite3.Connection = Depends(get_db)
         tot_c = sum(_tf(g["monto"]) for g in gs if g["categoria"] == "C")
         ca = _tf(unidad["coef_a"]); cb = _tf(unidad["coef_b"]); cc = _tf(unidad["coef_c"])
         imp_mes_calc = tot_a * ca / 100.0 + tot_b * cb / 100.0 + tot_c * cc / 100.0
+        part = db.execute("SELECT COALESCE(SUM(monto),0) FROM gastos_particulares WHERE consorcio_id=? AND periodo=? AND unidad_id=?", (unidad["consorcio_id"], body.periodo, body.unidad_id)).fetchone()[0]
+        imp_mes_calc += _tf(part)
     else:
         imp_mes_calc = 0.0
     imp = imp_mes_calc if imp_mes_calc > 0 else (body.imp_mes_override or 0.0)

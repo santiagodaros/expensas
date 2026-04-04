@@ -9,8 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { useApp } from "@/contexts/AppContext";
-import { AlertTriangle, TrendingUp, DollarSign, CheckCircle2, Plus, FileText } from "lucide-react";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { AlertTriangle, TrendingUp, DollarSign, CheckCircle2, Plus, FileText, Mail } from "lucide-react";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 
 const API_BASE = "http://localhost:8000";
@@ -25,8 +24,7 @@ async function openPdf(url: string) {
     } catch {}
     throw new Error(detail);
   }
-  const { path } = await res.json();
-  await openPath(path);
+  await res.json();
 }
 const fmt = (n: number) =>
   new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
@@ -109,7 +107,26 @@ export function EstadoPagosPage() {
   const { consorcioId: CONSORCIO, periodo: PERIODO } = useApp();
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [selected, setSelected] = useState<PagoUnitRow | null>(null);
+  const [sendingMail, setSendingMail] = useState<Set<number>>(new Set());
   const { data, loading, refetch } = useGet<PagosResumen>("/api/finanzas/pagos", CONSORCIO ? { consorcio: CONSORCIO, periodo: PERIODO } : null);
+
+  const handleEnviarBoleta = async (row: PagoUnitRow) => {
+    setSendingMail((prev) => new Set(prev).add(row.unidad_id));
+    try {
+      const res = await tauriFetch(`${API_BASE}/api/reportes/boleta/${row.unidad_id}/${PERIODO}/enviar`, { method: "POST" });
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`;
+        try { const body = await res.json(); detail = body.detail ?? detail; } catch {}
+        toast.error(`Error al enviar: ${detail}`);
+      } else {
+        toast.success(`Boleta enviada a ${row.email}`);
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Error al enviar boleta");
+    } finally {
+      setSendingMail((prev) => { const s = new Set(prev); s.delete(row.unidad_id); return s; });
+    }
+  };
   const rows = (data?.unidades ?? []).filter((r) => {
     if (filtro === "mora") return r.en_mora;
     if (filtro === "aldia") return r.pagado;
@@ -177,7 +194,28 @@ export function EstadoPagosPage() {
                 <TableCell><div className="flex items-center gap-2.5"><Avatar nombre={row.nombre} /><span className="text-sm" style={{ color: "var(--color-text)" }}>{row.nombre}</span></div></TableCell>
                 <TableCell>{estadoBadge(row)}</TableCell>
                 <TableCell className="font-semibold" style={{ color: row.total_pagar > 0 ? "var(--color-danger)" : "var(--color-success)" }}>{fmt(row.total_pagar)}</TableCell>
-                <TableCell><div className="flex gap-2"><Button size="sm" onClick={() => setSelected(row)} className="h-7 px-3 text-xs gap-1" style={{ backgroundColor: "var(--color-accent-subtle)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}><Plus size={12} />Registrar</Button><Button size="sm" onClick={() => { toast.promise(openPdf(`/api/reportes/boleta/${row.unidad_id}/${PERIODO}`), { loading: "Generando boleta...", success: "Boleta abierta", error: (e: unknown) => e instanceof Error ? e.message : "Error al generar boleta" }); }} className="h-7 px-3 text-xs gap-1" style={{ backgroundColor: "rgba(139,92,246,0.1)", color: "#8b5cf6", border: "1px solid rgba(139,92,246,0.3)" }}><FileText size={12} />Boleta</Button></div></TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => setSelected(row)} className="h-7 px-3 text-xs gap-1" style={{ backgroundColor: "var(--color-accent-subtle)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}>
+                      <Plus size={12} />Registrar
+                    </Button>
+                    <Button size="sm" onClick={() => { toast.promise(openPdf(`/api/reportes/boleta/${row.unidad_id}/${PERIODO}`), { loading: "Generando boleta...", success: "Boleta abierta", error: (e: unknown) => e instanceof Error ? e.message : "Error al generar boleta" }); }} className="h-7 px-3 text-xs gap-1" style={{ backgroundColor: "rgba(139,92,246,0.1)", color: "#8b5cf6", border: "1px solid rgba(139,92,246,0.3)" }}>
+                      <FileText size={12} />Boleta
+                    </Button>
+                    {row.email && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleEnviarBoleta(row)}
+                        disabled={sendingMail.has(row.unidad_id)}
+                        className="h-7 px-3 text-xs gap-1"
+                        style={{ backgroundColor: "rgba(16,185,129,0.1)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)" }}
+                        title={`Enviar boleta a ${row.email}`}
+                      >
+                        <Mail size={12} />{sendingMail.has(row.unidad_id) ? "Enviando..." : "Enviar"}
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

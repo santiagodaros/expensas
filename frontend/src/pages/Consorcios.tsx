@@ -172,7 +172,7 @@ function ImportarPadronDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text)", maxWidth: 480 }}>
         <DialogHeader>
-          <DialogTitle style={{ color: "var(--color-text)" }}>Importar Padrón</DialogTitle>
+          <DialogTitle style={{ color: "var(--color-text)" }}>Importar UF</DialogTitle>
         </DialogHeader>
 
         <div
@@ -471,7 +471,7 @@ export function ConsorciosPage() {
               <div className="flex items-center gap-2">
                 <Button size="sm" onClick={() => setImportDialog(true)} className="h-7 px-3 text-xs gap-1"
                   style={{ backgroundColor: "rgba(255,255,255,0.05)", color: "var(--color-text2)", border: "1px solid var(--color-border)" }}>
-                  <UploadCloud size={12} /> Importar Padrón
+                  <UploadCloud size={12} /> Importar UF
                 </Button>
                 <Button size="sm" onClick={() => setUnidadDialog({ open: true })} className="h-7 px-3 text-xs gap-1"
                   style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}>

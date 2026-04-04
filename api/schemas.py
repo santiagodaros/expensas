@@ -61,6 +61,7 @@ class GastoBase(BaseModel):
     categoria: str  # A | B | C
     descripcion: str
     monto: float
+    tipo: str = "ordinario"  # "ordinario" | "extraordinario"
     comprobante_path: Optional[str] = None
 
 class GastoCreate(GastoBase):
@@ -82,6 +83,29 @@ class GastoUpdate(BaseModel):
     categoria: str
     descripcion: str
     monto: float
+    tipo: str = "ordinario"
+
+
+# ─── GASTOS PARTICULARES ───────────────────────────────────────────────────────
+
+class GastoParticularBase(BaseModel):
+    unidad_id: int
+    descripcion: str
+    monto: float
+
+class GastoParticularCreate(GastoParticularBase):
+    pass
+
+class GastoParticularOut(GastoParticularBase):
+    id: int
+    consorcio_id: int
+    periodo: str
+    model_config = {"from_attributes": True}
+
+class GastoParticularBatchIn(BaseModel):
+    consorcio_id: int
+    periodo: str
+    particulares: List[GastoParticularCreate]
 
 
 # ─── PAGOS ─────────────────────────────────────────────────────────────────────

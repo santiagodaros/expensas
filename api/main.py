@@ -12,6 +12,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import consorcios, finanzas, dashboard, config_router, reportes
+from api.database import DB_PATH, run_migrations
+
+run_migrations(DB_PATH)
 
 app = FastAPI(
     title="Gestor Consorcios API",

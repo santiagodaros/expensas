@@ -61,6 +61,7 @@ export interface Gasto {
   categoria: "A" | "B" | "C";
   descripcion: string;
   monto: number;
+  tipo?: string;  // "ordinario" | "extraordinario"
   comprobante_path?: string;
 }
 
@@ -68,7 +69,24 @@ export interface GastoBatchItem {
   categoria: "A" | "B" | "C";
   descripcion: string;
   monto: number;
+  tipo?: string;
   comprobante_path?: string;
+}
+
+// ─── Gastos Particulares ──────────────────────────────────────────────────────
+export interface GastoParticular {
+  id: number;
+  consorcio_id: number;
+  periodo: string;
+  unidad_id: number;
+  descripcion: string;
+  monto: number;
+}
+
+export interface GastoParticularCreate {
+  unidad_id: number;
+  descripcion: string;
+  monto: number;
 }
 
 // ─── Pagos ────────────────────────────────────────────────────────────────────
@@ -135,5 +153,10 @@ export interface Dashboard {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 export interface Config {
-  [key: string]: string;
+  nombre_cat_a: string;
+  nombre_cat_b: string;
+  nombre_cat_c: string;
+  smtp_server: string;
+  smtp_port: string;
+  smtp_user: string;
 }

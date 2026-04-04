@@ -2,16 +2,15 @@ import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useGet, usePut, useDelete } from "@/hooks/useApi";
-import { Gasto, GastoBatchItem } from "@/types/api";
+import { Gasto, GastoBatchItem, GastoParticular, GastoParticularCreate, Unidad } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDropzone } from "react-dropzone";
-import { UploadCloud, Plus, Receipt, FileText, Pencil, Trash2, X } from "lucide-react";
+import { UploadCloud, Plus, Receipt, FileText, Pencil, Trash2, X, User } from "lucide-react";
 import { useApp } from "@/contexts/AppContext";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
-import { openPath } from "@tauri-apps/plugin-opener";
 
 const API_BASE = "http://localhost:8000";
 async function openPdf(url: string) {
@@ -25,16 +24,22 @@ async function openPdf(url: string) {
     } catch {}
     throw new Error(detail);
   }
-  const { path } = await res.json();
-  await openPath(path);
+  await res.json();
 }
 
 const fmt = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
 const CATEGORIAS = [{ value: "A", label: "Cat A - Gastos Comunes" }, { value: "B", label: "Cat B - Fuerza Motriz" }, { value: "C", label: "Cat C - Locales" }];
-const EMPTY_FORM: GastoBatchItem = { categoria: "A", descripcion: "", monto: 0 };
+const TIPOS = [{ value: "ordinario", label: "Ordinario" }, { value: "extraordinario", label: "Extraordinario" }];
+const EMPTY_FORM: GastoBatchItem = { categoria: "A", descripcion: "", monto: 0, tipo: "ordinario" };
+const EMPTY_PART: GastoParticularCreate = { unidad_id: 0, descripcion: "", monto: 0 };
+
+type Tab = "generales" | "particulares";
 
 export function CargaGastosPage() {
   const { consorcioId: CONSORCIO, periodo: PERIODO } = useApp();
+  const [activeTab, setActiveTab] = useState<Tab>("generales");
+
+  // ── Tab Generales ──────────────────────────────────────────────────────────
   const [form, setForm] = useState<GastoBatchItem>({ ...EMPTY_FORM });
   const [file, setFile] = useState<File | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -51,7 +56,7 @@ export function CargaGastosPage() {
     if (!form.descripcion.trim()) { toast.error("Ingresa una descripcion"); return; }
     if (!form.monto || form.monto <= 0) { toast.error("El monto debe ser mayor a cero"); return; }
     if (editingId !== null) {
-      const res = await put(editingId, { categoria: form.categoria, descripcion: form.descripcion, monto: form.monto });
+      const res = await put(editingId, { categoria: form.categoria, descripcion: form.descripcion, monto: form.monto, tipo: form.tipo });
       if (res !== null) { toast.success("Gasto actualizado"); resetForm(); refetch(); }
       else { toast.error("Error al actualizar el gasto"); }
     } else {
@@ -70,7 +75,7 @@ export function CargaGastosPage() {
 
   const handleEdit = (g: Gasto) => {
     setEditingId(g.id);
-    setForm({ categoria: g.categoria, descripcion: g.descripcion, monto: g.monto });
+    setForm({ categoria: g.categoria, descripcion: g.descripcion, monto: g.monto, tipo: g.tipo ?? undefined });
   };
 
   const handleDelete = async (g: Gasto) => {
@@ -83,84 +88,253 @@ export function CargaGastosPage() {
   const totalGeneral = (gastos ?? []).reduce((s, g) => s + g.monto, 0);
   const isBusy = saving || updating;
 
+  // ── Tab Particulares ───────────────────────────────────────────────────────
+  const [partForm, setPartForm] = useState<GastoParticularCreate>({ ...EMPTY_PART });
+  const [savingPart, setSavingPart] = useState(false);
+  const { data: unidades } = useGet<Unidad[]>(
+    `/api/consorcios/${CONSORCIO ?? 0}/unidades`,
+    CONSORCIO ? {} : null
+  );
+  const { data: particulares, loading: loadingPart, refetch: refetchPart } = useGet<GastoParticular[]>(
+    "/api/finanzas/gastos_particulares",
+    CONSORCIO ? { consorcio: CONSORCIO, periodo: PERIODO } : null
+  );
+  const { remove: removePart, loading: deletingPart } = useDelete("/api/finanzas/gastos_particulares");
+
+  const resetPartForm = () => setPartForm({ ...EMPTY_PART });
+
+  const handleSavePart = async () => {
+    if (!partForm.unidad_id || partForm.unidad_id === 0) { toast.error("Selecciona una unidad"); return; }
+    if (!partForm.descripcion.trim()) { toast.error("Ingresa una descripcion"); return; }
+    if (!partForm.monto || partForm.monto <= 0) { toast.error("El monto debe ser mayor a cero"); return; }
+    setSavingPart(true);
+    try {
+      await api.post("/api/finanzas/gastos_particulares", partForm, { params: { consorcio_id: CONSORCIO, periodo: PERIODO } });
+      toast.success(`Gasto particular guardado: ${partForm.descripcion}`);
+      resetPartForm(); refetchPart();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error al guardar");
+    } finally {
+      setSavingPart(false);
+    }
+  };
+
+  const handleDeletePart = async (p: GastoParticular) => {
+    const ok = await removePart(p.id);
+    if (ok) { toast.success(`Eliminado: ${p.descripcion}`); refetchPart(); }
+    else { toast.error("Error al eliminar"); }
+  };
+
+  const unidadNombre = (uid: number) => {
+    const u = (unidades ?? []).find((u) => u.id === uid);
+    if (!u) return `UF ${uid}`;
+    const nombre = u.propietario || u.inquilino || "";
+    return `UF ${u.unidad}${nombre ? " - " + nombre : ""}`;
+  };
+
+  const totalParticulares = (particulares ?? []).reduce((s, p) => s + p.monto, 0);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  const tabStyle = (tab: Tab) => ({
+    padding: "6px 16px",
+    fontSize: "13px",
+    fontWeight: activeTab === tab ? 600 : 400,
+    color: activeTab === tab ? "var(--color-accent)" : "var(--color-text2)",
+    background: "none",
+    border: "none",
+    borderBottom: activeTab === tab ? "2px solid var(--color-accent)" : "2px solid transparent",
+    cursor: "pointer",
+    transition: "color 0.15s",
+  } as React.CSSProperties);
+
   return (
-    <div className="grid grid-cols-2 gap-5 h-full">
-      <div className="flex flex-col gap-4">
-        <div className="rounded-xl border p-5 shadow-card" style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Receipt size={16} style={{ color: "var(--color-accent)" }} />
-              <h2 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
-                {editingId !== null ? "Editar Comprobante" : "Nuevo Comprobante"}
-              </h2>
-            </div>
-            {editingId !== null && (
-              <button onClick={resetForm} className="text-xs flex items-center gap-1 hover:opacity-70" style={{ color: "var(--color-text2)" }}>
-                <X size={12} />Cancelar
-              </button>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Categoria</label>
-              <Select value={form.categoria} onValueChange={(v) => setForm((f) => ({ ...f, categoria: v as "A" | "B" | "C" }))}>
-                <SelectTrigger style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }}><SelectValue /></SelectTrigger>
-                <SelectContent style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
-                  {CATEGORIAS.map((cat) => (<SelectItem key={cat.value} value={cat.value} style={{ color: "var(--color-text)" }}>{cat.label}</SelectItem>))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Monto</label>
-              <Input type="number" value={form.monto || ""} onChange={(e) => setForm((f) => ({ ...f, monto: parseFloat(e.target.value) || 0 }))} placeholder="0.00" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
-            </div>
-            <div className="col-span-2 flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Descripcion</label>
-              <Input value={form.descripcion} onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Descripcion del gasto" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
-            </div>
-          </div>
-          <Button onClick={handleSave} disabled={isBusy || !form.descripcion} className="w-full mt-4 gap-2" style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
-            {editingId !== null ? <Pencil size={14} /> : <Plus size={14} />}
-            {isBusy ? "Guardando..." : (editingId !== null ? "Actualizar Comprobante" : "Agregar Comprobante")}
-          </Button>
-        </div>
-        <div {...getRootProps()} className="flex-1 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors min-h-40"
-          style={{ borderColor: isDragActive ? "var(--color-accent)" : "var(--color-border)", backgroundColor: isDragActive ? "rgba(59,130,246,0.05)" : "var(--color-surface)" }}>
-          <input {...getInputProps()} />
-          <UploadCloud size={32} style={{ color: isDragActive ? "var(--color-accent)" : "var(--color-border)" }} />
-          {file ? (<div className="text-center"><p className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{file.name}</p><p className="text-xs mt-1" style={{ color: "var(--color-text2)" }}>{(file.size / 1024).toFixed(1)} KB</p></div>
-          ) : (<div className="text-center px-4"><p className="text-sm font-medium" style={{ color: "var(--color-text2)" }}>Arrastra el comprobante aqui</p><p className="text-xs mt-1" style={{ color: "var(--color-border)" }}>PDF o imagen (JPG, PNG)</p></div>)}
-        </div>
+    <div className="flex flex-col h-full gap-0">
+      {/* Tabs */}
+      <div className="flex gap-0 border-b mb-4" style={{ borderColor: "var(--color-border)" }}>
+        <button style={tabStyle("generales")} onClick={() => setActiveTab("generales")}>Gastos Generales</button>
+        <button style={tabStyle("particulares")} onClick={() => setActiveTab("particulares")}>Gastos Particulares</button>
       </div>
 
-      <div className="flex flex-col gap-4">
-        <div className="grid grid-cols-3 gap-3">
-          {["A","B","C"].map((cat) => (<div key={cat} className="rounded-xl p-3 border shadow-card text-center" style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}><p className="text-xs mb-1" style={{ color: "var(--color-text2)" }}>Cat {cat}</p><p className="text-sm font-bold" style={{ color: "var(--color-accent)" }}>{fmt(totalCat(cat))}</p></div>))}
-        </div>
-        <div className="flex-1 rounded-xl border shadow-card overflow-hidden flex flex-col" style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
-          <div className="px-4 py-3 border-b flex items-center justify-between" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
-            <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>Carga mensual - {PERIODO}</span>
-            <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)" }}>{(gastos ?? []).length} items</span>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-            {loading && [0,1,2].map((i) => <Skeleton key={i} className="h-12 rounded-lg" style={{ backgroundColor: "var(--color-surface2)" }} />)}
-            {!loading && (gastos ?? []).length === 0 && (<div className="flex flex-col items-center justify-center flex-1 gap-2 py-8"><Receipt size={28} style={{ color: "var(--color-border)" }} /><p className="text-xs" style={{ color: "var(--color-text2)" }}>Sin gastos cargados</p></div>)}
-            {(gastos ?? []).map((g) => (
-              <div key={g.id} className="flex items-center gap-3 p-3 rounded-lg transition-all" style={{ backgroundColor: editingId === g.id ? "rgba(59,130,246,0.08)" : "var(--color-surface2)", outline: editingId === g.id ? "1px solid rgba(59,130,246,0.3)" : "none" }}>
-                <span className="w-6 h-6 rounded-md text-xs font-bold flex items-center justify-center text-white shrink-0" style={{ backgroundColor: g.categoria === "A" ? "var(--color-accent)" : g.categoria === "B" ? "var(--color-success)" : "var(--color-warning)" }}>{g.categoria}</span>
-                <div className="flex-1 min-w-0"><p className="text-xs font-medium truncate" style={{ color: "var(--color-text)" }}>{g.descripcion}</p></div>
-                <span className="text-sm font-semibold shrink-0" style={{ color: "var(--color-text)" }}>{fmt(g.monto)}</span>
-                <div className="flex gap-1 shrink-0">
-                  <button onClick={() => handleEdit(g)} className="w-6 h-6 rounded flex items-center justify-center hover:opacity-70 transition-opacity" style={{ color: "var(--color-accent)", backgroundColor: "rgba(59,130,246,0.1)" }} title="Editar"><Pencil size={11} /></button>
-                  <button onClick={() => handleDelete(g)} disabled={deleting} className="w-6 h-6 rounded flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-40" style={{ color: "var(--color-danger)", backgroundColor: "rgba(239,68,68,0.1)" }} title="Eliminar"><Trash2 size={11} /></button>
+      {/* ── Tab: Gastos Generales ── */}
+      {activeTab === "generales" && (
+        <div className="grid grid-cols-2 gap-5 flex-1 overflow-hidden">
+          <div className="flex flex-col gap-4">
+            <div className="rounded-xl border p-5 shadow-card" style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Receipt size={16} style={{ color: "var(--color-accent)" }} />
+                  <h2 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>
+                    {editingId !== null ? "Editar Comprobante" : "Nuevo Comprobante"}
+                  </h2>
+                </div>
+                {editingId !== null && (
+                  <button onClick={resetForm} className="text-xs flex items-center gap-1 hover:opacity-70" style={{ color: "var(--color-text2)" }}>
+                    <X size={12} />Cancelar
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Categoria</label>
+                  <Select value={form.categoria} onValueChange={(v) => setForm((f) => ({ ...f, categoria: v as "A" | "B" | "C" }))}>
+                    <SelectTrigger style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }}><SelectValue /></SelectTrigger>
+                    <SelectContent style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
+                      {CATEGORIAS.map((cat) => (<SelectItem key={cat.value} value={cat.value} style={{ color: "var(--color-text)" }}>{cat.label}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Tipo</label>
+                  <Select value={form.tipo ?? "ordinario"} onValueChange={(v) => setForm((f) => ({ ...f, tipo: v }))}>
+                    <SelectTrigger style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }}><SelectValue /></SelectTrigger>
+                    <SelectContent style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
+                      {TIPOS.map((t) => (<SelectItem key={t.value} value={t.value} style={{ color: "var(--color-text)" }}>{t.label}</SelectItem>))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Monto</label>
+                  <Input type="number" value={form.monto || ""} onChange={(e) => setForm((f) => ({ ...f, monto: parseFloat(e.target.value) || 0 }))} placeholder="0.00" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
+                </div>
+                <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>&nbsp;</label>
+                  {/* spacer para alinear monto con tipo en la grilla */}
+                  <div />
+                </div>
+                <div className="col-span-2 flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Descripcion</label>
+                  <Input value={form.descripcion} onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Descripcion del gasto" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
                 </div>
               </div>
-            ))}
+              <Button onClick={handleSave} disabled={isBusy || !form.descripcion} className="w-full mt-4 gap-2" style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
+                {editingId !== null ? <Pencil size={14} /> : <Plus size={14} />}
+                {isBusy ? "Guardando..." : (editingId !== null ? "Actualizar Comprobante" : "Agregar Comprobante")}
+              </Button>
+            </div>
+            <div {...getRootProps()} className="flex-1 rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors min-h-40"
+              style={{ borderColor: isDragActive ? "var(--color-accent)" : "var(--color-border)", backgroundColor: isDragActive ? "rgba(59,130,246,0.05)" : "var(--color-surface)" }}>
+              <input {...getInputProps()} />
+              <UploadCloud size={32} style={{ color: isDragActive ? "var(--color-accent)" : "var(--color-border)" }} />
+              {file ? (<div className="text-center"><p className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{file.name}</p><p className="text-xs mt-1" style={{ color: "var(--color-text2)" }}>{(file.size / 1024).toFixed(1)} KB</p></div>
+              ) : (<div className="text-center px-4"><p className="text-sm font-medium" style={{ color: "var(--color-text2)" }}>Arrastra el comprobante aqui</p><p className="text-xs mt-1" style={{ color: "var(--color-border)" }}>PDF o imagen (JPG, PNG)</p></div>)}
+            </div>
           </div>
-          <div className="px-4 py-3 border-t flex items-center justify-between" style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface2)" }}>
-            <span className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>Total del mes</span>
-            <span className="text-lg font-bold" style={{ color: "var(--color-accent)" }}>{fmt(totalGeneral)}</span>
-            <Button size="sm" onClick={() => { toast.promise(openPdf(`/api/reportes/general/${CONSORCIO}/${PERIODO}`), { loading: "Generando PDF...", success: "PDF abierto", error: (e: unknown) => e instanceof Error ? e.message : "Error al generar PDF" }); }} className="h-7 px-3 text-xs gap-1" style={{ backgroundColor: "var(--color-accent-subtle)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}><FileText size={12} />PDF General</Button>
+
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-3 gap-3">
+              {["A","B","C"].map((cat) => (<div key={cat} className="rounded-xl p-3 border shadow-card text-center" style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}><p className="text-xs mb-1" style={{ color: "var(--color-text2)" }}>Cat {cat}</p><p className="text-sm font-bold" style={{ color: "var(--color-accent)" }}>{fmt(totalCat(cat))}</p></div>))}
+            </div>
+            <div className="flex-1 rounded-xl border shadow-card overflow-hidden flex flex-col" style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
+              <div className="px-4 py-3 border-b flex items-center justify-between" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
+                <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>Carga mensual - {PERIODO}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)" }}>{(gastos ?? []).length} items</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+                {loading && [0,1,2].map((i) => <Skeleton key={i} className="h-12 rounded-lg" style={{ backgroundColor: "var(--color-surface2)" }} />)}
+                {!loading && (gastos ?? []).length === 0 && (<div className="flex flex-col items-center justify-center flex-1 gap-2 py-8"><Receipt size={28} style={{ color: "var(--color-border)" }} /><p className="text-xs" style={{ color: "var(--color-text2)" }}>Sin gastos cargados</p></div>)}
+                {(gastos ?? []).map((g) => (
+                  <div key={g.id} className="flex items-center gap-3 p-3 rounded-lg transition-all" style={{ backgroundColor: editingId === g.id ? "rgba(59,130,246,0.08)" : "var(--color-surface2)", outline: editingId === g.id ? "1px solid rgba(59,130,246,0.3)" : "none" }}>
+                    <span className="w-6 h-6 rounded-md text-xs font-bold flex items-center justify-center text-white shrink-0" style={{ backgroundColor: g.categoria === "A" ? "var(--color-accent)" : g.categoria === "B" ? "var(--color-success)" : "var(--color-warning)" }}>{g.categoria}</span>
+                    {/* Badge tipo */}
+                    <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{
+                      backgroundColor: (g.tipo ?? "ordinario") === "extraordinario" ? "rgba(234,88,12,0.15)" : "rgba(59,130,246,0.1)",
+                      color: (g.tipo ?? "ordinario") === "extraordinario" ? "var(--color-warning)" : "var(--color-accent)",
+                      fontSize: "10px",
+                    }}>
+                      {(g.tipo ?? "ordinario") === "extraordinario" ? "Ext" : "Ord"}
+                    </span>
+                    <div className="flex-1 min-w-0"><p className="text-xs font-medium truncate" style={{ color: "var(--color-text)" }}>{g.descripcion}</p></div>
+                    <span className="text-sm font-semibold shrink-0" style={{ color: "var(--color-text)" }}>{fmt(g.monto)}</span>
+                    <div className="flex gap-1 shrink-0">
+                      <button onClick={() => handleEdit(g)} className="w-6 h-6 rounded flex items-center justify-center hover:opacity-70 transition-opacity" style={{ color: "var(--color-accent)", backgroundColor: "rgba(59,130,246,0.1)" }} title="Editar"><Pencil size={11} /></button>
+                      <button onClick={() => handleDelete(g)} disabled={deleting} className="w-6 h-6 rounded flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-40" style={{ color: "var(--color-danger)", backgroundColor: "rgba(239,68,68,0.1)" }} title="Eliminar"><Trash2 size={11} /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="px-4 py-3 border-t flex items-center justify-between" style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface2)" }}>
+                <span className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>Total del mes</span>
+                <span className="text-lg font-bold" style={{ color: "var(--color-accent)" }}>{fmt(totalGeneral)}</span>
+                <Button size="sm" onClick={() => { toast.promise(openPdf(`/api/reportes/general/${CONSORCIO}/${PERIODO}`), { loading: "Generando PDF...", success: "PDF abierto", error: (e: unknown) => e instanceof Error ? e.message : "Error al generar PDF" }); }} className="h-7 px-3 text-xs gap-1" style={{ backgroundColor: "var(--color-accent-subtle)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}><FileText size={12} />PDF General</Button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* ── Tab: Gastos Particulares ── */}
+      {activeTab === "particulares" && (
+        <div className="grid grid-cols-2 gap-5 flex-1 overflow-hidden">
+          {/* Formulario */}
+          <div className="flex flex-col gap-4">
+            <div className="rounded-xl border p-5 shadow-card" style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
+              <div className="flex items-center gap-2 mb-4">
+                <User size={16} style={{ color: "var(--color-accent)" }} />
+                <h2 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>Nuevo Gasto Particular</h2>
+              </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Unidad</label>
+                  <Select
+                    value={partForm.unidad_id ? String(partForm.unidad_id) : ""}
+                    onValueChange={(v) => setPartForm((f) => ({ ...f, unidad_id: parseInt(v) }))}
+                  >
+                    <SelectTrigger style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }}>
+                      <SelectValue placeholder="Seleccionar unidad..." />
+                    </SelectTrigger>
+                    <SelectContent style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
+                      {(unidades ?? []).map((u) => (
+                        <SelectItem key={u.id} value={String(u.id)} style={{ color: "var(--color-text)" }}>
+                          UF {u.unidad}{(u.propietario || u.inquilino) ? ` - ${u.propietario || u.inquilino}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Descripcion</label>
+                  <Input value={partForm.descripcion} onChange={(e) => setPartForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Descripcion del gasto" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
+                </div>
+                <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Monto</label>
+                  <Input type="number" value={partForm.monto || ""} onChange={(e) => setPartForm((f) => ({ ...f, monto: parseFloat(e.target.value) || 0 }))} placeholder="0.00" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
+                </div>
+              </div>
+              <Button onClick={handleSavePart} disabled={savingPart || !partForm.descripcion || !partForm.unidad_id} className="w-full mt-4 gap-2" style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
+                <Plus size={14} />
+                {savingPart ? "Guardando..." : "Agregar Gasto Particular"}
+              </Button>
+            </div>
+          </div>
+
+          {/* Lista */}
+          <div className="flex flex-col gap-4">
+            <div className="flex-1 rounded-xl border shadow-card overflow-hidden flex flex-col" style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
+              <div className="px-4 py-3 border-b flex items-center justify-between" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
+                <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>Particulares - {PERIODO}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)" }}>{(particulares ?? []).length} items</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+                {loadingPart && [0,1,2].map((i) => <Skeleton key={i} className="h-12 rounded-lg" style={{ backgroundColor: "var(--color-surface2)" }} />)}
+                {!loadingPart && (particulares ?? []).length === 0 && (
+                  <div className="flex flex-col items-center justify-center flex-1 gap-2 py-8">
+                    <User size={28} style={{ color: "var(--color-border)" }} />
+                    <p className="text-xs" style={{ color: "var(--color-text2)" }}>Sin gastos particulares</p>
+                  </div>
+                )}
+                {(particulares ?? []).map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ backgroundColor: "var(--color-surface2)" }}>
+                    <span className="w-6 h-6 rounded-md text-xs font-bold flex items-center justify-center text-white shrink-0" style={{ backgroundColor: "var(--color-success)" }}>U</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate" style={{ color: "var(--color-text)" }}>{p.descripcion}</p>
+                      <p className="text-xs truncate" style={{ color: "var(--color-text2)" }}>{unidadNombre(p.unidad_id)}</p>
+                    </div>
+                    <span className="text-sm font-semibold shrink-0" style={{ color: "var(--color-text)" }}>{fmt(p.monto)}</span>
+                    <button onClick={() => handleDeletePart(p)} disabled={deletingPart} className="w-6 h-6 rounded flex items-center justify-center hover:opacity-70 transition-opacity disabled:opacity-40" style={{ color: "var(--color-danger)", backgroundColor: "rgba(239,68,68,0.1)" }} title="Eliminar"><Trash2 size={11} /></button>
+                  </div>
+                ))}
+              </div>
+              <div className="px-4 py-3 border-t flex items-center justify-between" style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface2)" }}>
+                <span className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>Total particulares</span>
+                <span className="text-lg font-bold" style={{ color: "var(--color-accent)" }}>{fmt(totalParticulares)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
