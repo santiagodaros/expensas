@@ -61,6 +61,48 @@ def run_migrations(db_path: str):
             )
         """)
         con.commit()
+
+        # Tabla proveedores
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS proveedores (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                consorcio_id INTEGER NOT NULL,
+                razon_social TEXT NOT NULL,
+                cuit TEXT,
+                domicilio TEXT,
+                cat_afip TEXT,
+                cbu TEXT,
+                FOREIGN KEY(consorcio_id) REFERENCES consorcios(id) ON DELETE CASCADE
+            )
+        """)
+        con.commit()
+
+        # FK proveedor_id en gastos
+        try:
+            con.execute("ALTER TABLE gastos ADD COLUMN proveedor_id INTEGER REFERENCES proveedores(id)")
+            con.commit()
+        except sqlite3.OperationalError:
+            pass  # ya existe
+
+        # Tabla sueldos
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS sueldos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                consorcio_id INTEGER NOT NULL,
+                periodo TEXT NOT NULL,
+                empleado TEXT NOT NULL,
+                concepto TEXT DEFAULT 'Encargado',
+                sueldo_bruto REAL DEFAULT 0.0,
+                cargas_suterh REAL DEFAULT 0.0,
+                cargas_fateryh REAL DEFAULT 0.0,
+                otras_cargas REAL DEFAULT 0.0,
+                total_gasto REAL DEFAULT 0.0,
+                gasto_id INTEGER,
+                FOREIGN KEY(consorcio_id) REFERENCES consorcios(id) ON DELETE CASCADE,
+                FOREIGN KEY(gasto_id) REFERENCES gastos(id) ON DELETE SET NULL
+            )
+        """)
+        con.commit()
     finally:
         con.close()
 

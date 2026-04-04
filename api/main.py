@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import consorcios, finanzas, dashboard, config_router, reportes
+from api.routers import consorcios, finanzas, dashboard, config_router, reportes, proveedores, sueldos
 from api.database import DB_PATH, run_migrations
 
 run_migrations(DB_PATH)
@@ -43,6 +43,8 @@ app.include_router(finanzas.router,   prefix="/api")
 app.include_router(dashboard.router,  prefix="/api")
 app.include_router(config_router.router, prefix="/api")
 app.include_router(reportes.router,    prefix="/api")
+app.include_router(proveedores.router, prefix="/api")
+app.include_router(sueldos.router,    prefix="/api")
 
 @app.get("/health")
 def health():

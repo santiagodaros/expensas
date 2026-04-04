@@ -9,6 +9,8 @@ import {
   Settings,
   ChevronRight,
   ChevronDown,
+  Truck,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
@@ -20,6 +22,8 @@ const NAV_ITEMS = [
   { to: "/consorcios", icon: Building2, label: "Consorcios" },
   { to: "/gastos", icon: Receipt, label: "Gastos" },
   { to: "/pagos", icon: CreditCard, label: "Pagos" },
+  { to: "/proveedores", icon: Truck, label: "Proveedores" },
+  { to: "/sueldos", icon: Wallet, label: "Sueldos" },
   { to: "/config", icon: Settings, label: "Configuracion" },
 ];
 

@@ -4,7 +4,7 @@ import api from "@/lib/api";
 const MAX_RETRIES = 10;
 const RETRY_DELAY_MS = 2000;
 
-export function useGet<T>(url: string, params?: Record<string, string | number> | null) {
+export function useGet<T>(url: string | null, params?: Record<string, string | number> | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);

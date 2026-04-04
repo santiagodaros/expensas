@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useGet, usePut, useDelete } from "@/hooks/useApi";
-import { Gasto, GastoBatchItem, GastoParticular, GastoParticularCreate, Unidad } from "@/types/api";
+import { Gasto, GastoBatchItem, GastoParticular, GastoParticularCreate, Unidad, Proveedor } from "@/types/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,7 +30,7 @@ async function openPdf(url: string) {
 const fmt = (n: number) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 }).format(n);
 const CATEGORIAS = [{ value: "A", label: "Cat A - Gastos Comunes" }, { value: "B", label: "Cat B - Fuerza Motriz" }, { value: "C", label: "Cat C - Locales" }];
 const TIPOS = [{ value: "ordinario", label: "Ordinario" }, { value: "extraordinario", label: "Extraordinario" }];
-const EMPTY_FORM: GastoBatchItem = { categoria: "A", descripcion: "", monto: 0, tipo: "ordinario" };
+const EMPTY_FORM: GastoBatchItem = { categoria: "A", descripcion: "", monto: 0, tipo: "ordinario", proveedor_id: undefined };
 const EMPTY_PART: GastoParticularCreate = { unidad_id: 0, descripcion: "", monto: 0 };
 
 type Tab = "generales" | "particulares";
@@ -44,6 +44,7 @@ export function CargaGastosPage() {
   const [file, setFile] = useState<File | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const { data: gastos, loading, refetch } = useGet<Gasto[]>("/api/finanzas/gastos", CONSORCIO ? { consorcio: CONSORCIO, periodo: PERIODO } : null);
+  const { data: proveedores } = useGet<Proveedor[]>("/api/proveedores", CONSORCIO ? { consorcio: CONSORCIO } : null);
   const [saving, setSaving] = useState(false);
   const { put, loading: updating } = usePut<object, object>("/api/finanzas/gastos");
   const { remove, loading: deleting } = useDelete("/api/finanzas/gastos");
@@ -56,7 +57,7 @@ export function CargaGastosPage() {
     if (!form.descripcion.trim()) { toast.error("Ingresa una descripcion"); return; }
     if (!form.monto || form.monto <= 0) { toast.error("El monto debe ser mayor a cero"); return; }
     if (editingId !== null) {
-      const res = await put(editingId, { categoria: form.categoria, descripcion: form.descripcion, monto: form.monto, tipo: form.tipo });
+      const res = await put(editingId, { categoria: form.categoria, descripcion: form.descripcion, monto: form.monto, tipo: form.tipo, proveedor_id: form.proveedor_id });
       if (res !== null) { toast.success("Gasto actualizado"); resetForm(); refetch(); }
       else { toast.error("Error al actualizar el gasto"); }
     } else {
@@ -75,7 +76,12 @@ export function CargaGastosPage() {
 
   const handleEdit = (g: Gasto) => {
     setEditingId(g.id);
-    setForm({ categoria: g.categoria, descripcion: g.descripcion, monto: g.monto, tipo: g.tipo ?? undefined });
+    setForm({ categoria: g.categoria, descripcion: g.descripcion, monto: g.monto, tipo: g.tipo ?? undefined, proveedor_id: g.proveedor_id });
+  };
+
+  const proveedorNombre = (pid?: number) => {
+    if (!pid) return null;
+    return (proveedores ?? []).find((p) => p.id === pid)?.razon_social ?? null;
   };
 
   const handleDelete = async (g: Gasto) => {
@@ -184,7 +190,7 @@ export function CargaGastosPage() {
                   </Select>
                 </div>
                 <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Tipo</label>
-                  <Select value={form.tipo ?? "ordinario"} onValueChange={(v) => setForm((f) => ({ ...f, tipo: v }))}>
+                  <Select value={form.tipo ?? "ordinario"} onValueChange={(v) => setForm((f) => ({ ...f, tipo: v ?? undefined }))}>
                     <SelectTrigger style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }}><SelectValue /></SelectTrigger>
                     <SelectContent style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
                       {TIPOS.map((t) => (<SelectItem key={t.value} value={t.value} style={{ color: "var(--color-text)" }}>{t.label}</SelectItem>))}
@@ -200,6 +206,22 @@ export function CargaGastosPage() {
                 </div>
                 <div className="col-span-2 flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Descripcion</label>
                   <Input value={form.descripcion} onChange={(e) => setForm((f) => ({ ...f, descripcion: e.target.value }))} placeholder="Descripcion del gasto" style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }} />
+                </div>
+                <div className="col-span-2 flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Proveedor (opcional)</label>
+                  <Select
+                    value={form.proveedor_id ? String(form.proveedor_id) : "none"}
+                    onValueChange={(v) => setForm((f) => ({ ...f, proveedor_id: v && v !== "none" ? parseInt(v) : undefined }))}
+                  >
+                    <SelectTrigger style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }}>
+                      <SelectValue placeholder="Sin proveedor" />
+                    </SelectTrigger>
+                    <SelectContent style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)" }}>
+                      <SelectItem value="none" style={{ color: "var(--color-text2)" }}>Sin proveedor</SelectItem>
+                      {(proveedores ?? []).map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)} style={{ color: "var(--color-text)" }}>{p.razon_social}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <Button onClick={handleSave} disabled={isBusy || !form.descripcion} className="w-full mt-4 gap-2" style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
@@ -239,7 +261,10 @@ export function CargaGastosPage() {
                     }}>
                       {(g.tipo ?? "ordinario") === "extraordinario" ? "Ext" : "Ord"}
                     </span>
-                    <div className="flex-1 min-w-0"><p className="text-xs font-medium truncate" style={{ color: "var(--color-text)" }}>{g.descripcion}</p></div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate" style={{ color: "var(--color-text)" }}>{g.descripcion}</p>
+                      {proveedorNombre(g.proveedor_id) && <p className="text-xs truncate" style={{ color: "var(--color-text2)" }}>{proveedorNombre(g.proveedor_id)}</p>}
+                    </div>
                     <span className="text-sm font-semibold shrink-0" style={{ color: "var(--color-text)" }}>{fmt(g.monto)}</span>
                     <div className="flex gap-1 shrink-0">
                       <button onClick={() => handleEdit(g)} className="w-6 h-6 rounded flex items-center justify-center hover:opacity-70 transition-opacity" style={{ color: "var(--color-accent)", backgroundColor: "rgba(59,130,246,0.1)" }} title="Editar"><Pencil size={11} /></button>
@@ -272,7 +297,7 @@ export function CargaGastosPage() {
                 <div className="flex flex-col gap-1"><label className="text-xs" style={{ color: "var(--color-text2)" }}>Unidad</label>
                   <Select
                     value={partForm.unidad_id ? String(partForm.unidad_id) : ""}
-                    onValueChange={(v) => setPartForm((f) => ({ ...f, unidad_id: parseInt(v) }))}
+                    onValueChange={(v) => setPartForm((f) => ({ ...f, unidad_id: parseInt(v ?? "0") }))}
                   >
                     <SelectTrigger style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)" }}>
                       <SelectValue placeholder="Seleccionar unidad..." />

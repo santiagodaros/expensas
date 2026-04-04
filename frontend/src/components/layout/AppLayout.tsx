@@ -8,6 +8,7 @@ const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
   "/gastos":     { title: "Carga de Gastos", subtitle: "Registro de comprobantes del período" },
   "/pagos":      { title: "Estado de Pagos", subtitle: "Cobranza y seguimiento de unidades" },
   "/config":     { title: "Configuración", subtitle: "Ajustes del sistema" },
+  "/proveedores": { title: "Proveedores", subtitle: "ABM de proveedores del consorcio" },
 };
 
 export function AppLayout() {

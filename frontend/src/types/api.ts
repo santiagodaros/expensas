@@ -63,6 +63,7 @@ export interface Gasto {
   monto: number;
   tipo?: string;  // "ordinario" | "extraordinario"
   comprobante_path?: string;
+  proveedor_id?: number;
 }
 
 export interface GastoBatchItem {
@@ -71,6 +72,7 @@ export interface GastoBatchItem {
   monto: number;
   tipo?: string;
   comprobante_path?: string;
+  proveedor_id?: number;
 }
 
 // ─── Gastos Particulares ──────────────────────────────────────────────────────
@@ -149,6 +151,56 @@ export interface Dashboard {
   kpi: DashboardKPI;
   chart: BarData[];
   deudores: DeudorPendiente[];
+}
+
+// ─── Proveedores ──────────────────────────────────────────────────────────────
+export interface Proveedor {
+  id: number;
+  consorcio_id: number;
+  razon_social: string;
+  cuit?: string;
+  domicilio?: string;
+  cat_afip?: string;
+  cbu?: string;
+}
+
+export interface ProveedorCreate {
+  razon_social: string;
+  cuit?: string;
+  domicilio?: string;
+  cat_afip?: string;
+  cbu?: string;
+}
+
+export interface CuentaCorrienteRow {
+  proveedor_id: number;
+  razon_social: string;
+  total_gastos: number;
+  periodos: number;
+}
+
+// ─── Sueldos ──────────────────────────────────────────────────────────────────
+export interface Sueldo {
+  id: number;
+  consorcio_id: number;
+  periodo: string;
+  empleado: string;
+  concepto: string;
+  sueldo_bruto: number;
+  cargas_suterh: number;
+  cargas_fateryh: number;
+  otras_cargas: number;
+  total_gasto: number;
+  gasto_id?: number;
+}
+
+export interface SueldoCreate {
+  empleado: string;
+  concepto: string;
+  sueldo_bruto: number;
+  cargas_suterh: number;
+  cargas_fateryh: number;
+  otras_cargas: number;
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────

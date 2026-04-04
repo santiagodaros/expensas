@@ -61,8 +61,8 @@ def delete_gasto(gid: int, db: sqlite3.Connection = Depends(get_db)):
 
 @router.put("/finanzas/gastos/{gid}", response_model=MessageOut)
 def update_gasto(gid: int, body: GastoUpdate, db: sqlite3.Connection = Depends(get_db)):
-    db.execute("UPDATE gastos SET categoria=?, descripcion=?, monto=?, tipo=? WHERE id=?",
-               (body.categoria, body.descripcion, body.monto, body.tipo, gid))
+    db.execute("UPDATE gastos SET categoria=?, descripcion=?, monto=?, tipo=?, proveedor_id=? WHERE id=?",
+               (body.categoria, body.descripcion, body.monto, body.tipo, body.proveedor_id, gid))
     return {"ok": True, "message": f"Gasto {gid} actualizado"}
 
 

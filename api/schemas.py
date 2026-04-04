@@ -63,6 +63,7 @@ class GastoBase(BaseModel):
     monto: float
     tipo: str = "ordinario"  # "ordinario" | "extraordinario"
     comprobante_path: Optional[str] = None
+    proveedor_id: Optional[int] = None
 
 class GastoCreate(GastoBase):
     pass
@@ -84,6 +85,34 @@ class GastoUpdate(BaseModel):
     descripcion: str
     monto: float
     tipo: str = "ordinario"
+    proveedor_id: Optional[int] = None
+
+
+# ─── PROVEEDORES ───────────────────────────────────────────────────────────────
+
+class ProveedorBase(BaseModel):
+    razon_social: str
+    cuit: Optional[str] = None
+    domicilio: Optional[str] = None
+    cat_afip: Optional[str] = None
+    cbu: Optional[str] = None
+
+class ProveedorCreate(ProveedorBase):
+    pass
+
+class ProveedorOut(ProveedorBase):
+    id: int
+    consorcio_id: int
+    model_config = {"from_attributes": True}
+
+class ProveedorUpdate(ProveedorBase):
+    pass
+
+class CuentaCorrienteRow(BaseModel):
+    proveedor_id: int
+    razon_social: str
+    total_gastos: float
+    periodos: int
 
 
 # ─── GASTOS PARTICULARES ───────────────────────────────────────────────────────
@@ -204,6 +233,31 @@ class ConfigUpdate(BaseModel):
     smtp_pass: Optional[str] = None
     git_repo_url: Optional[str] = None
     git_token: Optional[str] = None
+
+
+# ─── SUELDOS ───────────────────────────────────────────────────────────────────
+
+class SueldoBase(BaseModel):
+    empleado: str
+    concepto: str = "Encargado"
+    sueldo_bruto: float = 0.0
+    cargas_suterh: float = 0.0
+    cargas_fateryh: float = 0.0
+    otras_cargas: float = 0.0
+
+class SueldoCreate(SueldoBase):
+    pass
+
+class SueldoOut(SueldoBase):
+    id: int
+    consorcio_id: int
+    periodo: str
+    total_gasto: float
+    gasto_id: Optional[int] = None
+    model_config = {"from_attributes": True}
+
+class SueldoUpdate(SueldoBase):
+    pass
 
 
 # ─── MISC ──────────────────────────────────────────────────────────────────────
