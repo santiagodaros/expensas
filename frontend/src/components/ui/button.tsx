@@ -18,6 +18,12 @@ const buttonVariants = cva(
         destructive:
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
+        // "Chips" de accion secundaria con fondo tenue — reemplazan las clases
+        // Tailwind sueltas y repetidas (bg-accent-subtle/violet-500/emerald-500)
+        // que aparecian copiadas en cada pagina para el mismo tipo de boton.
+        soft: "bg-accent-subtle text-accent border-accent/30 hover:bg-accent-ghost",
+        "soft-violet": "bg-violet-500/10 text-violet-500 border-violet-500/30 hover:bg-violet-500/20",
+        "soft-emerald": "bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20",
       },
       size: {
         default:

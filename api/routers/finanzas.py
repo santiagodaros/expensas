@@ -1,13 +1,23 @@
 """Router: Finanzas"""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from typing import List
 import sqlite3
-from api.database import get_db, rows_to_list, row_to_dict
-from api.schemas import GastoOut, GastoCreate, GastoBatchIn, GastoUpdate, PagoRegistrar, PagosResumenOut, PagoUnitRow, MessageOut, GastoParticularOut, GastoParticularCreate
+import os
+from pathlib import Path
+from api.database import get_db, rows_to_list
+from api.schemas import GastoOut, GastoCreate, GastoBatchIn, GastoUpdate, PagoRegistrar, PagosResumenOut, PagoUnitRow, MessageOut, GastoParticularOut, GastoParticularCreate, BatchMarcarPagados
+from api.utils import safe_filename_part, safe_periodo, load_pagos_periodo
 
 from decimal import Decimal, ROUND_HALF_UP
 
 router = APIRouter(tags=["Finanzas"])
+
+_COMPROBANTES_MAX_BYTES = 15 * 1024 * 1024  # 15MB
+_COMPROBANTES_ALLOWED_EXT = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _comprobantes_base() -> Path:
+    return Path.home() / "Documents" / "Expensas" / "Comprobantes"
 
 def _tf(val):
     if val is None or val == "": return 0.0
@@ -18,18 +28,6 @@ def _m(val) -> float:
     """Round to 2 decimal places using ROUND_HALF_UP (banker-safe for money)."""
     return float(Decimal(str(round(float(val), 10))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
-def _pa_of(k):
-    y, m = int(k[:4]), int(k[5:])
-    m -= 1
-    if m == 0: m, y = 12, y - 1
-    return f"{y}-{m:02d}"
-
-def _pn_of(k):
-    y, m = int(k[:4]), int(k[5:])
-    m += 1
-    if m == 13: m, y = 1, y + 1
-    return f"{y}-{m:02d}"
-
 # GASTOS
 @router.get("/finanzas/gastos", response_model=List[GastoOut])
 def get_gastos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlite3.Connection = Depends(get_db)):
@@ -39,8 +37,8 @@ def get_gastos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlit
 @router.post("/finanzas/gastos", response_model=GastoOut, status_code=201)
 def create_gasto(consorcio_id: int, periodo: str, body: GastoCreate, db: sqlite3.Connection = Depends(get_db)):
     cur = db.execute(
-        "INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,tipo,comprobante_path) VALUES(?,?,?,?,?,?,?)",
-        (consorcio_id, periodo, body.categoria, body.descripcion, body.monto, body.tipo, body.comprobante_path)
+        "INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,tipo,comprobante_path,proveedor_id) VALUES(?,?,?,?,?,?,?,?)",
+        (consorcio_id, periodo, body.categoria, body.descripcion, body.monto, body.tipo, body.comprobante_path, body.proveedor_id)
     )
     row = db.execute("SELECT * FROM gastos WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -50,8 +48,8 @@ def create_gasto(consorcio_id: int, periodo: str, body: GastoCreate, db: sqlite3
 def batch_gastos(body: GastoBatchIn, db: sqlite3.Connection = Depends(get_db)):
     db.execute("DELETE FROM gastos WHERE consorcio_id=? AND periodo=?", (body.consorcio_id, body.periodo))
     for g in body.gastos:
-        db.execute("INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,tipo,comprobante_path) VALUES(?,?,?,?,?,?,?)",
-                   (body.consorcio_id, body.periodo, g.categoria, g.descripcion, g.monto, g.tipo, g.comprobante_path))
+        db.execute("INSERT INTO gastos(consorcio_id,periodo,categoria,descripcion,monto,tipo,comprobante_path,proveedor_id) VALUES(?,?,?,?,?,?,?,?)",
+                   (body.consorcio_id, body.periodo, g.categoria, g.descripcion, g.monto, g.tipo, g.comprobante_path, g.proveedor_id))
     return {"ok": True, "message": f"{len(body.gastos)} gastos guardados para {body.periodo}"}
 
 @router.delete("/finanzas/gastos/{gid}", response_model=MessageOut)
@@ -64,6 +62,41 @@ def update_gasto(gid: int, body: GastoUpdate, db: sqlite3.Connection = Depends(g
     db.execute("UPDATE gastos SET categoria=?, descripcion=?, monto=?, tipo=?, proveedor_id=? WHERE id=?",
                (body.categoria, body.descripcion, body.monto, body.tipo, body.proveedor_id, gid))
     return {"ok": True, "message": f"Gasto {gid} actualizado"}
+
+
+@router.post("/finanzas/gastos/{gid}/comprobante", response_model=MessageOut)
+async def subir_comprobante(gid: int, file: UploadFile = File(...), db: sqlite3.Connection = Depends(get_db)):
+    gasto = db.execute("SELECT consorcio_id, periodo FROM gastos WHERE id=?", (gid,)).fetchone()
+    if not gasto:
+        raise HTTPException(404, "Gasto no encontrado")
+    ext = Path(file.filename or "").suffix.lower()
+    if ext not in _COMPROBANTES_ALLOWED_EXT:
+        raise HTTPException(400, "Tipo de archivo no permitido (solo PDF o imagen)")
+    contents = await file.read()
+    if len(contents) > _COMPROBANTES_MAX_BYTES:
+        raise HTTPException(400, "El archivo supera el tamaño máximo permitido (15MB)")
+
+    periodo = safe_periodo(gasto["periodo"])
+    folder = _comprobantes_base() / str(gasto["consorcio_id"]) / periodo
+    folder.mkdir(parents=True, exist_ok=True)
+    filename = safe_filename_part(f"{gid}_{file.filename}")
+    path = folder / filename
+    path.write_bytes(contents)
+
+    db.execute("UPDATE gastos SET comprobante_path=? WHERE id=?", (str(path), gid))
+    return {"ok": True, "message": "Comprobante guardado"}
+
+
+@router.get("/finanzas/gastos/{gid}/comprobante")
+def abrir_comprobante(gid: int, db: sqlite3.Connection = Depends(get_db)):
+    gasto = db.execute("SELECT comprobante_path FROM gastos WHERE id=?", (gid,)).fetchone()
+    if not gasto or not gasto["comprobante_path"]:
+        raise HTTPException(404, "Este gasto no tiene comprobante adjunto")
+    path = gasto["comprobante_path"]
+    if not os.path.isfile(path):
+        raise HTTPException(404, "El archivo del comprobante ya no existe en disco")
+    os.startfile(path)
+    return {"ok": True}
 
 
 # GASTOS PARTICULARES
@@ -98,20 +131,13 @@ def update_gasto_particular(gid: int, body: GastoParticularCreate, db: sqlite3.C
 # PAGOS
 @router.get("/finanzas/pagos", response_model=PagosResumenOut)
 def get_pagos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlite3.Connection = Depends(get_db)):
-    cid = consorcio; per = periodo; per_a = _pa_of(per)
+    cid = consorcio; per = periodo
     cons_row = db.execute("SELECT * FROM consorcios WHERE id=?", (cid,)).fetchone()
     if not cons_row: raise HTTPException(404, "Consorcio no encontrado")
     cons = dict(cons_row); reserva_pct = _tf(cons.get("reserva_pct", 0.0))
     unis = db.execute("SELECT * FROM unidades WHERE consorcio_id=? ORDER BY CAST(unidad AS INTEGER)", (cid,)).fetchall()
     gs = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=?", (cid, per)).fetchall()
-    uid_list = [u["id"] for u in unis]
-    if uid_list:
-        ph = ",".join("?" * len(uid_list))
-        pagos_rows = db.execute(f"SELECT * FROM pagos WHERE periodo IN (?,?) AND unidad_id IN ({ph})", [per_a, per] + uid_list).fetchall()
-    else:
-        pagos_rows = []
-    p_ant = {p["unidad_id"]: dict(p) for p in pagos_rows if p["periodo"] == per_a}
-    p_act = {p["unidad_id"]: dict(p) for p in pagos_rows if p["periodo"] == per}
+    p_ant, p_act = load_pagos_periodo(db, cid, per)
     tot_a = sum(_tf(g["monto"]) for g in gs if g["categoria"] == "A")
     tot_b = sum(_tf(g["monto"]) for g in gs if g["categoria"] == "B")
     tot_c = sum(_tf(g["monto"]) for g in gs if g["categoria"] == "C")
@@ -124,7 +150,12 @@ def get_pagos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlite
         part = db.execute("SELECT COALESCE(SUM(monto),0) FROM gastos_particulares WHERE consorcio_id=? AND periodo=? AND unidad_id=?", (cid, per, uid)).fetchone()[0]
         imp_mes += _tf(part)
         pa = p_ant.get(uid, {}); pc = p_act.get(uid, {})
-        saldo_ant = max(0.0, _tf(pa.get("monto_deuda", 0.0))) if pa else _tf(pc.get("saldo_inicial", 0.0))
+        # No se clampa a 0: un sobrepago real (monto_deuda negativo) debe
+        # trasladarse como credito a favor del mes siguiente, no perderse.
+        # Si todavia no hay ningun pago anterior registrado, se arranca desde
+        # el saldo de apertura cargado en la unidad (deuda o credito previo
+        # a empezar a usar el sistema).
+        saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u_d.get("saldo_apertura", 0.0))
         monto_rec = _tf(pc.get("monto_recibido", 0.0)); telec = _tf(pc.get("telec", 0.0))
         imp_display = imp_mes if imp_mes > 0 else _tf(pc.get("imp_mes_override") or 0)
         reserva = _tf(pc.get("reserva", 0.0)) if pc else _m(imp_display * reserva_pct / 100.0)
@@ -180,8 +211,32 @@ def registrar_pago(body: PagoRegistrar, db: sqlite3.Connection = Depends(get_db)
         "saldo_inicial=excluded.saldo_inicial,imp_mes_override=excluded.imp_mes_override",
         (body.unidad_id, body.periodo, body.pagado, _m(deuda), body.monto_recibido,
          body.telec, body.reserva, body.redondeo, body.saldo_inicial, body.imp_mes_override))
-    if body.pagado:
-        per_n = _pn_of(body.periodo)
-        db.execute("INSERT INTO pagos(unidad_id,periodo,monto_recibido) VALUES(?,?,?) ON CONFLICT(unidad_id,periodo) DO UPDATE SET monto_recibido=excluded.monto_recibido",
-                   (body.unidad_id, per_n, _m(deuda)))
+    # No hace falta pre-sembrar el periodo siguiente: get_pagos() ya lee
+    # monto_deuda de este período como saldo_anterior del que viene. El bloque
+    # que existía acá escribía `deuda` en el monto_recibido del mes siguiente,
+    # lo cual se cancelaba con ese mismo saldo_anterior (dejaba en $0 una deuda
+    # real) y, para sobrepagos, invertía el signo y generaba una mora falsa.
     return {"ok": True, "message": "Pago registrado"}
+
+
+@router.post("/finanzas/pagos/batch_marcar", response_model=MessageOut)
+def batch_marcar_pagados(body: BatchMarcarPagados, db: sqlite3.Connection = Depends(get_db)):
+    """Marca varias unidades como pagadas de una vez, cobrando exactamente lo
+    que cada una debia (igual que abrir 'Registrar Pago' y confirmar el monto
+    prellenado, pero para varias unidades en un solo click)."""
+    resumen = get_pagos(consorcio=body.consorcio_id, periodo=body.periodo, db=db)
+    filas = {u.unidad_id: u for u in resumen.unidades}
+    marcados = 0
+    for uid in body.unidad_ids:
+        row = filas.get(uid)
+        if not row:
+            continue
+        registrar_pago(PagoRegistrar(
+            unidad_id=uid, periodo=body.periodo, pagado=1,
+            monto_recibido=row.total_pagar if row.total_pagar > 0 else 0.0,
+            telec=row.telec, reserva=row.reserva, redondeo=row.redondeo,
+            saldo_inicial=row.saldo_anterior,
+            imp_mes_override=row.imp_mes if row.imp_mes > 0 else None,
+        ), db)
+        marcados += 1
+    return {"ok": True, "message": f"{marcados} unidades marcadas como pagadas"}

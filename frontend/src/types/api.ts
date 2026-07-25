@@ -31,6 +31,8 @@ export interface Unidad {
   coef_b: number;
   coef_c: number;
   email?: string;
+  saldo_apertura: number;
+  saldo_apertura_editable: boolean;
 }
 
 export interface UnidadCreate {
@@ -43,6 +45,7 @@ export interface UnidadCreate {
   coef_b: number;
   coef_c: number;
   email?: string;
+  saldo_apertura: number;
 }
 
 export interface UnidadBatchOut {
@@ -170,13 +173,6 @@ export interface ProveedorCreate {
   domicilio?: string;
   cat_afip?: string;
   cbu?: string;
-}
-
-export interface CuentaCorrienteRow {
-  proveedor_id: number;
-  razon_social: string;
-  total_gastos: number;
-  periodos: number;
 }
 
 // ─── Sueldos ──────────────────────────────────────────────────────────────────

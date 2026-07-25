@@ -8,6 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from decimal import Decimal, ROUND_HALF_UP
 from fpdf import FPDF
 from api.database import get_db
+from api.utils import safe_filename_part, safe_periodo, load_pagos_periodo
 
 router = APIRouter(tags=["Reportes"])
 
@@ -17,17 +18,17 @@ def _boletas_base() -> Path:
 
 
 def _save_general_pdf(pdf_bytes: bytes, filename: str, periodo: str) -> str:
-    folder = _boletas_base() / periodo
+    folder = _boletas_base() / safe_periodo(periodo)
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / filename
+    path = folder / safe_filename_part(filename)
     path.write_bytes(pdf_bytes)
     return str(path)
 
 
 def _save_boleta_pdf(pdf_bytes: bytes, filename: str, periodo: str) -> str:
-    folder = _boletas_base() / periodo / "Boletas_UF"
+    folder = _boletas_base() / safe_periodo(periodo) / "Boletas_UF"
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / filename
+    path = folder / safe_filename_part(filename)
     path.write_bytes(pdf_bytes)
     return str(path)
 
@@ -47,12 +48,6 @@ def _fmt(val) -> str:
     except: return "0,00"
     s = f"{f:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
-
-def _pa_of(k: str) -> str:
-    y, m = int(k[:4]), int(k[5:])
-    m -= 1
-    if m == 0: m, y = 12, y - 1
-    return f"{y}-{m:02d}"
 
 def _vto(periodo: str, dia_vto: int) -> str:
     y, m = int(periodo[:4]), int(periodo[5:])
@@ -192,12 +187,12 @@ def _page_recaudacion(pdf, consorcio, unis, gastos, pagos_ant, pagos_act, period
         ca, cb, cc = _tf(u["coef_a"]), _tf(u["coef_b"]), _tf(u["coef_c"])
         ex = tot_a * ca / 100.0 + tot_b * cb / 100.0 + tot_c * cc / 100.0
         pa = pagos_ant.get(uid, {}); pc = pagos_act.get(uid, {})
-        saldo_ant = max(0.0, _tf(pa.get("monto_deuda", 0.0))) if pa else _tf(pc.get("saldo_inicial", 0.0))
+        saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u.get("saldo_apertura", 0.0))
         cobranza  = _tf(pc.get("monto_recibido", 0.0))
         telec     = _tf(pc.get("telec", 0.0))
         reserva   = _tf(pc.get("reserva", 0.0)) if pc else _m(ex * reserva_pct / 100.0)
         redondeo  = _tf(pc.get("redondeo", 0.0))
-        saldo_neto  = max(0.0, saldo_ant - cobranza - telec)
+        saldo_neto  = saldo_ant - cobranza - telec
         total_pagar = saldo_neto + ex + reserva + redondeo
         ts_a += saldo_ant; ts_co += cobranza; ts_tel += telec; ts_sn += saldo_neto
         ts_ex += ex; ts_re += reserva; ts_rd += redondeo; ts_tot += total_pagar
@@ -317,7 +312,7 @@ def _pdf_boleta(consorcio: dict, u: dict, gastos: list, saldo_ant: float, cobran
     imp_extraordinario = _calc_imp(gastos_ext)
     imp_particulares  = sum(_tf(p["monto"]) for p in (gastos_particulares_u or []))
     imp_mes           = imp_ordinario + imp_extraordinario + imp_particulares
-    saldo_neto        = max(0.0, saldo_ant - cobranza - telec)
+    saldo_neto        = saldo_ant - cobranza - telec
     total_pagar       = imp_mes + saldo_neto + reserva + redondeo
     nombre_u          = u.get("propietario") or u.get("inquilino") or ""
 
@@ -432,12 +427,17 @@ def _pdf_boleta(consorcio: dict, u: dict, gastos: list, saldo_ant: float, cobran
 
     _row("Expensas del Mes:", imp_mes)
     if saldo_ant  > 0.001: _row("Saldo Anterior:", saldo_ant)
+    elif saldo_ant < -0.001: _row("Saldo a Favor Anterior:", -saldo_ant)
     if cobranza   > 0.001: _row("Cobranza Recibida:", cobranza)
     if telec      > 0.001: _row("Telec / Vs:", telec)
-    if saldo_ant  > 0.001 and (cobranza > 0.001 or telec > 0.001): _row("Saldo Neto:", saldo_neto)
+    if abs(saldo_ant) > 0.001 and (cobranza > 0.001 or telec > 0.001):
+        _row("Saldo Neto:", saldo_neto) if saldo_neto >= 0 else _row("Saldo Neto a Favor:", -saldo_neto)
     if reserva    > 0.001: _row("Reserva:", reserva)
     if abs(redondeo) > 0.001: _row("Redondeo:", redondeo)
-    _row("TOTAL A PAGAR:", total_pagar, bold=True, fill=True)
+    if total_pagar >= 0:
+        _row("TOTAL A PAGAR:", total_pagar, bold=True, fill=True)
+    else:
+        _row("SALDO A FAVOR:", -total_pagar, bold=True, fill=True)
 
     # Paginas 2 y 3: Prorrateo + Recaudacion (landscape)
     if unis is not None:
@@ -450,18 +450,7 @@ def _pdf_boleta(consorcio: dict, u: dict, gastos: list, saldo_ant: float, cobran
 # -- data helpers -------------------------------------------------------------
 
 def _load_pagos(db, cid: int, periodo: str):
-    per_a    = _pa_of(periodo)
-    uid_list = [u["id"] for u in db.execute("SELECT id FROM unidades WHERE consorcio_id=?", (cid,)).fetchall()]
-    if not uid_list:
-        return {}, {}
-    ph   = ",".join("?" * len(uid_list))
-    rows = db.execute(
-        f"SELECT * FROM pagos WHERE periodo IN (?,?) AND unidad_id IN ({ph})",
-        [per_a, periodo] + uid_list
-    ).fetchall()
-    p_ant = {p["unidad_id"]: dict(p) for p in rows if p["periodo"] == per_a}
-    p_act = {p["unidad_id"]: dict(p) for p in rows if p["periodo"] == periodo}
-    return p_ant, p_act
+    return load_pagos_periodo(db, cid, periodo)
 
 
 # -- endpoints ----------------------------------------------------------------
@@ -547,7 +536,7 @@ def reporte_boleta(unidad_id: int, periodo: str, db: sqlite3.Connection = Depend
     gastos = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=? ORDER BY categoria, descripcion", (u["consorcio_id"], periodo)).fetchall()
     pagos_ant, pagos_act = _load_pagos(db, u["consorcio_id"], periodo)
     pa = pagos_ant.get(unidad_id, {}); pc = pagos_act.get(unidad_id, {})
-    saldo_ant = max(0.0, _tf(pa.get("monto_deuda", 0.0))) if pa else _tf(pc.get("saldo_inicial", 0.0))
+    saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u.get("saldo_apertura", 0.0))
     cobranza  = _tf(pc.get("monto_recibido", 0.0))
     telec     = _tf(pc.get("telec", 0.0))
     reserva   = _tf(pc.get("reserva", 0.0))
@@ -600,7 +589,7 @@ def enviar_boleta(unidad_id: int, periodo: str, background_tasks: BackgroundTask
     gastos = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=? ORDER BY categoria, descripcion", (u["consorcio_id"], periodo)).fetchall()
     pagos_ant, pagos_act = _load_pagos(db, u["consorcio_id"], periodo)
     pa = pagos_ant.get(unidad_id, {}); pc = pagos_act.get(unidad_id, {})
-    saldo_ant = max(0.0, _tf(pa.get("monto_deuda", 0.0))) if pa else _tf(pc.get("saldo_inicial", 0.0))
+    saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u.get("saldo_apertura", 0.0))
     cobranza  = _tf(pc.get("monto_recibido", 0.0))
     telec     = _tf(pc.get("telec", 0.0))
     reserva   = _tf(pc.get("reserva", 0.0))

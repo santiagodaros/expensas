@@ -1,4 +1,4 @@
-"""
+r"""
 API Database - SQLite connection dependency for FastAPI.
 En produccion (frozen): usa %APPDATA%\GestorConsorcios\consorcios.db
 En desarrollo: usa la raiz del proyecto.
@@ -8,7 +8,7 @@ import sys
 import os
 import shutil
 import base64
-import hashlib
+from datetime import datetime
 
 
 def _get_db_path() -> str:
@@ -40,6 +40,69 @@ def run_migrations(db_path: str):
     """Aplica migraciones idempotentes al inicio de la aplicacion."""
     con = sqlite3.connect(db_path)
     try:
+        # Esquema base. En una instalacion nueva (sin consorcios.db previo) estas
+        # tablas no existen todavia: sin este bloque, cada endpoint fallaba con
+        # "no such table" apenas se llamaba por primera vez a la API.
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS consorcios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nombre TEXT NOT NULL,
+                cuit TEXT,
+                direccion TEXT,
+                unidades INTEGER DEFAULT 0,
+                reserva_pct REAL DEFAULT 0.0,
+                dia_vto INTEGER DEFAULT 10
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS unidades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                consorcio_id INTEGER NOT NULL,
+                unidad TEXT NOT NULL,
+                piso TEXT DEFAULT '',
+                dpto TEXT DEFAULT '',
+                propietario TEXT,
+                inquilino TEXT,
+                coef_a REAL DEFAULT 0.0,
+                coef_b REAL DEFAULT 0.0,
+                coef_c REAL DEFAULT 0.0,
+                email TEXT,
+                FOREIGN KEY(consorcio_id) REFERENCES consorcios(id) ON DELETE CASCADE
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS gastos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                consorcio_id INTEGER NOT NULL,
+                periodo TEXT NOT NULL,
+                categoria TEXT NOT NULL,
+                descripcion TEXT NOT NULL,
+                monto REAL DEFAULT 0.0,
+                tipo TEXT DEFAULT 'ordinario',
+                comprobante_path TEXT,
+                proveedor_id INTEGER REFERENCES proveedores(id),
+                FOREIGN KEY(consorcio_id) REFERENCES consorcios(id) ON DELETE CASCADE
+            )
+        """)
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS pagos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                unidad_id INTEGER NOT NULL,
+                periodo TEXT NOT NULL,
+                pagado INTEGER DEFAULT 0,
+                monto_deuda REAL DEFAULT 0.0,
+                monto_recibido REAL DEFAULT 0.0,
+                telec REAL DEFAULT 0.0,
+                reserva REAL DEFAULT 0.0,
+                redondeo REAL DEFAULT 0.0,
+                saldo_inicial REAL DEFAULT 0.0,
+                imp_mes_override REAL,
+                FOREIGN KEY(unidad_id) REFERENCES unidades(id) ON DELETE CASCADE,
+                UNIQUE(unidad_id, periodo)
+            )
+        """)
+        con.commit()
+
         # Agregar columna tipo a gastos (ignorar si ya existe)
         try:
             con.execute("ALTER TABLE gastos ADD COLUMN tipo TEXT DEFAULT 'ordinario'")
@@ -84,6 +147,15 @@ def run_migrations(db_path: str):
         except sqlite3.OperationalError:
             pass  # ya existe
 
+        # Saldo de apertura por unidad: deuda o credito arrastrado de antes de
+        # empezar a usar el sistema. Se aplica solo mientras la unidad no tenga
+        # ningun pago registrado (ver update_unidad en consorcios.py).
+        try:
+            con.execute("ALTER TABLE unidades ADD COLUMN saldo_apertura REAL DEFAULT 0.0")
+            con.commit()
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
+
         # Tabla sueldos
         con.execute("""
             CREATE TABLE IF NOT EXISTS sueldos (
@@ -105,6 +177,46 @@ def run_migrations(db_path: str):
         con.commit()
     finally:
         con.close()
+
+
+_MAX_BACKUPS = 15
+
+
+def backups_dir(db_path: str) -> str:
+    d = os.path.join(os.path.dirname(db_path), "Backups")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def create_backup(db_path: str) -> str:
+    """Copia timestamped de la base a Backups/, conservando las ultimas
+    _MAX_BACKUPS. Antes de copiar, fuerza un checkpoint del WAL para que el
+    archivo .db principal tenga todos los cambios recientes (en modo WAL las
+    escrituras mas nuevas viven en el -wal, no en el .db, hasta el checkpoint)."""
+    if not os.path.exists(db_path):
+        return ""
+    con = sqlite3.connect(db_path)
+    try:
+        con.execute("PRAGMA wal_checkpoint(FULL)")
+    finally:
+        con.close()
+
+    dest_dir = backups_dir(db_path)
+    # Microsegundos incluidos para no colisionar si se piden dos backups en el
+    # mismo segundo (backup automatico de arranque + backup manual, tests, etc).
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    dest = os.path.join(dest_dir, f"consorcios_{stamp}.db")
+    shutil.copy2(db_path, dest)
+
+    backups = sorted(
+        (f for f in os.listdir(dest_dir) if f.startswith("consorcios_") and f.endswith(".db")),
+    )
+    for old in backups[:-_MAX_BACKUPS]:
+        try:
+            os.remove(os.path.join(dest_dir, old))
+        except OSError:
+            pass
+    return dest
 
 
 def get_db():
@@ -131,7 +243,7 @@ def rows_to_list(rows):
     return [dict(r) for r in rows]
 
 # --- ENCRIPTACION DE DATOS SENSIBLES ---
-_SENSITIVE_KEYS = {"smtp_pass", "git_token"}
+_SENSITIVE_KEYS = {"smtp_pass"}
 _ENC_PREFIX    = "ENC1:"   # legacy XOR
 _ENC_PREFIX_V2 = "ENC2:"   # Fernet (AES-128-CBC + HMAC)
 

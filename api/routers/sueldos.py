@@ -29,6 +29,21 @@ def list_sueldos(
     return rows_to_list(rows)
 
 
+@router.get("/sueldos/historial", response_model=List[SueldoOut])
+def historial_empleado(
+    consorcio: int = Query(...),
+    empleado: str = Query(...),
+    db: sqlite3.Connection = Depends(get_db),
+):
+    """Todos los recibos de un empleado en este consorcio, a través de todos los
+    períodos (para comparar su sueldo mes a mes, no solo el período actual)."""
+    rows = db.execute(
+        "SELECT * FROM sueldos WHERE consorcio_id=? AND empleado=? ORDER BY periodo DESC",
+        (consorcio, empleado),
+    ).fetchall()
+    return rows_to_list(rows)
+
+
 @router.post("/sueldos", response_model=SueldoOut, status_code=201)
 def create_sueldo(
     consorcio_id: int = Query(...),

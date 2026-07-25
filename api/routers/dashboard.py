@@ -1,10 +1,10 @@
 """Router: Dashboard - KPIs y graficos agregados"""
 from fastapi import APIRouter, Depends, Query
-from typing import List
 import sqlite3
 from datetime import datetime
 from api.database import get_db
 from api.schemas import DashboardOut, DashboardKPI, BarData, DeudorPendiente
+from api.utils import load_pagos_periodo
 
 router = APIRouter(tags=["Dashboard"])
 
@@ -14,12 +14,6 @@ def _tf(val):
     except: return 0.0
 
 _MESES = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"]
-
-def _pa_of(k):
-    y, m = int(k[:4]), int(k[5:])
-    m -= 1
-    if m == 0: m, y = 12, y - 1
-    return f"{y}-{m:02d}"
 
 def _last_n_periods(n=8):
     from datetime import datetime
@@ -40,7 +34,6 @@ def get_dashboard(
     if not periodo:
         periodo = datetime.now().strftime("%Y-%m")
     per = periodo
-    per_a = _pa_of(per)
 
     cons = db.execute("SELECT * FROM consorcios WHERE id=?", (consorcio,)).fetchone()
     if not cons: return DashboardOut(kpi=DashboardKPI(total_unidades=0,pagados=0,pendientes=0,pct_cobranza=0,v_recaudado=0,v_deuda=0), chart=[], deudores=[])
@@ -48,16 +41,9 @@ def get_dashboard(
 
     unis = db.execute("SELECT * FROM unidades WHERE consorcio_id=? ORDER BY CAST(unidad AS INTEGER)", (consorcio,)).fetchall()
     gs = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=?", (consorcio, per)).fetchall()
-
     uid_list = [u["id"] for u in unis]
-    if uid_list:
-        ph = ",".join("?" * len(uid_list))
-        pagos_rows = db.execute(f"SELECT * FROM pagos WHERE periodo IN (?,?) AND unidad_id IN ({ph})", [per_a, per] + uid_list).fetchall()
-    else:
-        pagos_rows = []
 
-    p_ant = {p["unidad_id"]: dict(p) for p in pagos_rows if p["periodo"] == per_a}
-    p_act = {p["unidad_id"]: dict(p) for p in pagos_rows if p["periodo"] == per}
+    p_ant, p_act = load_pagos_periodo(db, consorcio, per)
     tot_a = sum(_tf(g["monto"]) for g in gs if g["categoria"] == "A")
     tot_b = sum(_tf(g["monto"]) for g in gs if g["categoria"] == "B")
     tot_c = sum(_tf(g["monto"]) for g in gs if g["categoria"] == "C")
@@ -70,7 +56,7 @@ def get_dashboard(
         ca, cb, cc = _tf(u_d.get("coef_a")), _tf(u_d.get("coef_b")), _tf(u_d.get("coef_c"))
         imp = tot_a*ca/100.0 + tot_b*cb/100.0 + tot_c*cc/100.0
         pa = p_ant.get(uid, {}); pc = p_act.get(uid, {})
-        saldo_ant = max(0.0, _tf(pa.get("monto_deuda", 0.0))) if pa else _tf(pc.get("saldo_inicial", 0.0))
+        saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u_d.get("saldo_apertura", 0.0))
         monto_rec = _tf(pc.get("monto_recibido", 0.0)); telec = _tf(pc.get("telec", 0.0))
         imp_d = imp if imp > 0 else _tf(pc.get("imp_mes_override") or 0)
         reserva = _tf(pc.get("reserva", 0.0)) if pc else round(imp_d * reserva_pct / 100.0, 2)

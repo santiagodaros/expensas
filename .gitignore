@@ -9,9 +9,15 @@ dist/
 
 # Data — never commit production data
 *.db
+*.key
 backups/
 Backup/
 expensas_pdf/
+Boletas/
+Comprobantes/
+
+# Python test cache
+.pytest_cache/
 
 # Node
 frontend/node_modules/

@@ -1,349 +1,24 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { useGet } from "@/hooks/useApi";
-import { Consorcio, ConsorcioCreate, Unidad, UnidadCreate, UnidadBatchOut } from "@/types/api";
+import { Consorcio, Unidad } from "@/types/api";
 import { useApp } from "@/contexts/AppContext";
 import api from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ConnectingState } from "@/components/ui/connecting-state";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Building2, Plus, Pencil, Trash2, Users, ChevronRight, MapPin, Hash, UploadCloud } from "lucide-react";
-import { useDropzone } from "react-dropzone";
-import Papa from "papaparse";
-import * as XLSX from "xlsx";
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium" style={{ color: "var(--color-text2)" }}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function TInput(props: React.ComponentProps<typeof Input>) {
-  return (
-    <Input
-      {...props}
-      style={{ backgroundColor: "var(--color-surface2)", borderColor: "var(--color-border)", color: "var(--color-text)", ...props.style }}
-    />
-  );
-}
-
-// ─── IMPORTAR PADRÓN — helpers ────────────────────────────────────────────────
-
-function normalizeHeader(h: string): string {
-  return h
-    .toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/[\s._\-/]+/g, "");
-}
-
-const HEADER_MAP: Record<string, keyof UnidadCreate> = {
-  unidad: "unidad", nro: "unidad", numero: "unidad", numero_de_unidad: "unidad",
-  piso: "piso",
-  dpto: "dpto", depto: "dpto", departamento: "dpto",
-  propietario: "propietario", prop: "propietario", dueno: "propietario", titular: "propietario",
-  inquilino: "inquilino", inq: "inquilino", locatario: "inquilino",
-  coefa: "coef_a", coef_a: "coef_a", coeficientea: "coef_a", coeficiente: "coef_a", coef: "coef_a",
-  coefb: "coef_b", coef_b: "coef_b", coeficienteb: "coef_b",
-  coefc: "coef_c", coef_c: "coef_c", coeficientec: "coef_c",
-  email: "email", mail: "email", correo: "email", correoelectronico: "email",
-};
-
-function parseRows(rawRows: Record<string, any>[]): UnidadCreate[] {
-  const units = rawRows
-    .filter((row) => Object.values(row).some((v) => v !== "" && v != null))
-    .map((row) => {
-      const mapped: Record<string, any> = {};
-      for (const [key, val] of Object.entries(row)) {
-        const norm = normalizeHeader(String(key));
-        const field = HEADER_MAP[norm];
-        if (field) mapped[field] = val;
-      }
-      const toNum = (v: any) => parseFloat(String(v ?? "0")) || 0;
-      return {
-        unidad: String(mapped.unidad ?? "").trim(),
-        piso: String(mapped.piso ?? "").trim(),
-        dpto: String(mapped.dpto ?? "").trim(),
-        propietario: String(mapped.propietario ?? "").trim() || undefined,
-        inquilino: String(mapped.inquilino ?? "").trim() || undefined,
-        coef_a: toNum(mapped.coef_a),
-        coef_b: toNum(mapped.coef_b),
-        coef_c: toNum(mapped.coef_c),
-        email: String(mapped.email ?? "").trim() || undefined,
-      };
-    })
-    .filter((u) => u.unidad !== "");
-
-  // Detectar escala: el sistema guarda en base 100 (porcentaje).
-  // Si la suma de coef_a es ≈ 1, el Excel usa decimales → convertir multiplicando por 100.
-  const sumA = units.reduce((acc, u) => acc + u.coef_a, 0);
-  if (sumA > 0 && Math.abs(sumA - 1) < 0.1) {
-    return units.map((u) => ({
-      ...u,
-      coef_a: parseFloat((u.coef_a * 100).toFixed(6)),
-      coef_b: parseFloat((u.coef_b * 100).toFixed(6)),
-      coef_c: parseFloat((u.coef_c * 100).toFixed(6)),
-    }));
-  }
-  return units;
-}
-
-// ─── IMPORTAR PADRÓN — componente ────────────────────────────────────────────
-
-function ImportarPadronDialog({
-  consorcioId,
-  onClose,
-  onSaved,
-}: {
-  consorcioId: number;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [parsed, setParsed] = useState<UnidadCreate[] | null>(null);
-  const [fileName, setFileName] = useState<string>("");
-  const [coefSum, setCoefSum] = useState<number>(0);
-  const [importing, setImporting] = useState(false);
-  const [result, setResult] = useState<UnidadBatchOut | null>(null);
-
-  const processFile = useCallback((file: File) => {
-    setFileName(file.name);
-    setParsed(null);
-    setResult(null);
-
-    const handleRows = (rawRows: Record<string, any>[]) => {
-      const units = parseRows(rawRows);
-      const sum = units.reduce((acc, u) => acc + u.coef_a, 0);
-      setParsed(units);
-      setCoefSum(sum);
-    };
-
-    if (file.name.toLowerCase().endsWith(".csv")) {
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        complete: (res) => handleRows(res.data as Record<string, any>[]),
-      });
-    } else {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const wb = XLSX.read(e.target?.result, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: "" });
-        handleRows(rows);
-      };
-      reader.readAsArrayBuffer(file);
-    }
-  }, []);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    accept: {
-      "text/csv": [".csv"],
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-    },
-    maxFiles: 1,
-    onDrop: (accepted) => { if (accepted[0]) processFile(accepted[0]); },
-  });
-
-  // Validación: la suma debe ser ≈ 100 (base porcentaje)
-  const coefOk = parsed && parsed.length > 0 && Math.abs(coefSum - 100) < 2;
-  const coefWarning = parsed && parsed.length > 0 && !coefOk;
-
-  const handleImport = async () => {
-    if (!parsed || parsed.length === 0) return;
-    setImporting(true);
-    try {
-      const res = await api.post(`/api/consorcios/${consorcioId}/unidades/batch`, { unidades: parsed });
-      const data = res.data as UnidadBatchOut;
-      setResult(data);
-      toast.success(data.message);
-      onSaved();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error al importar");
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text)", maxWidth: 480 }}>
-        <DialogHeader>
-          <DialogTitle style={{ color: "var(--color-text)" }}>Importar UF</DialogTitle>
-        </DialogHeader>
-
-        <div
-          {...getRootProps()}
-          className="rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-colors"
-          style={{
-            borderColor: isDragActive ? "var(--color-accent)" : "var(--color-border)",
-            backgroundColor: isDragActive ? "rgba(59,130,246,0.05)" : "var(--color-surface2)",
-          }}
-        >
-          <input {...getInputProps()} />
-          <UploadCloud size={32} className="mx-auto mb-3" style={{ color: "var(--color-text2)" }} />
-          {fileName ? (
-            <p className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{fileName}</p>
-          ) : (
-            <>
-              <p className="text-sm" style={{ color: "var(--color-text)" }}>
-                {isDragActive ? "Soltá el archivo acá" : "Arrastrá o hacé click para seleccionar"}
-              </p>
-              <p className="text-xs mt-1" style={{ color: "var(--color-text2)" }}>Soporta .csv y .xlsx</p>
-            </>
-          )}
-        </div>
-
-        {parsed && (
-          <div className="flex flex-col gap-2 text-xs">
-            <div className="flex items-center justify-between px-1">
-              <span style={{ color: "var(--color-text2)" }}>{parsed.length} unidades detectadas</span>
-              <span style={{ color: coefOk ? "#22c55e" : "var(--color-danger)" }}>
-                Suma Coef A = {coefSum.toFixed(2)}% {coefOk ? "✓" : "⚠"}
-              </span>
-            </div>
-            {coefWarning && (
-              <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: "rgba(234,179,8,0.1)", color: "#ca8a04", border: "1px solid rgba(234,179,8,0.3)" }}>
-                La suma de coeficientes A es {coefSum.toFixed(2)}%, debería ser 100%. Podés continuar igual, pero revisá el archivo.
-              </div>
-            )}
-          </div>
-        )}
-
-        {result && (
-          <div className="rounded-lg px-3 py-2 text-xs" style={{ backgroundColor: "rgba(34,197,94,0.1)", color: "#16a34a", border: "1px solid rgba(34,197,94,0.3)" }}>
-            {result.insertados} insertadas · {result.actualizados} actualizadas · {result.sin_cambios} sin cambios
-          </div>
-        )}
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} style={{ color: "var(--color-text2)" }}>
-            {result ? "Cerrar" : "Cancelar"}
-          </Button>
-          {!result && (
-            <Button
-              onClick={handleImport}
-              disabled={!parsed || parsed.length === 0 || importing}
-              style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}
-            >
-              {importing ? "Importando..." : `Importar ${parsed?.length ?? 0} unidades`}
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
-const EMPTY_C: ConsorcioCreate = { nombre: "", cuit: "", direccion: "", unidades: 0, reserva_pct: 5, dia_vto: 10 };
-
-function ConsorcioDialog({ initial, onClose, onSaved }: { initial?: Consorcio; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState<ConsorcioCreate>(
-    initial
-      ? { nombre: initial.nombre, cuit: initial.cuit ?? "", direccion: initial.direccion ?? "", unidades: initial.unidades, reserva_pct: initial.reserva_pct, dia_vto: initial.dia_vto }
-      : { ...EMPTY_C }
-  );
-  const [saving, setSaving] = useState(false);
-  const set = (k: keyof ConsorcioCreate, v: string | number) => setForm((f) => ({ ...f, [k]: v }));
-
-  const handleSave = async () => {
-    if (!form.nombre.trim()) return;
-    setSaving(true);
-    try {
-      initial ? await api.put(`/api/consorcios/${initial.id}`, form) : await api.post("/api/consorcios", form);
-      onSaved(); onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error desconocido");
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text)" }}>
-        <DialogHeader><DialogTitle style={{ color: "var(--color-text)" }}>{initial ? "Editar Consorcio" : "Nuevo Consorcio"}</DialogTitle></DialogHeader>
-        <div className="flex flex-col gap-3">
-          <Field label="Nombre *"><TInput value={form.nombre} onChange={(e) => set("nombre", e.target.value)} placeholder="Consorcio Av. Santa Fe 1234" /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="CUIT"><TInput value={form.cuit ?? ""} onChange={(e) => set("cuit", e.target.value)} placeholder="20-12345678-9" /></Field>
-            <Field label="Dia de vencimiento"><TInput type="number" value={form.dia_vto} onChange={(e) => set("dia_vto", parseInt(e.target.value) || 10)} min={1} max={31} /></Field>
-          </div>
-          <Field label="Direccion"><TInput value={form.direccion ?? ""} onChange={(e) => set("direccion", e.target.value)} placeholder="Av. Santa Fe 1234, CABA" /></Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Cant. unidades"><TInput type="number" value={form.unidades} onChange={(e) => set("unidades", parseInt(e.target.value) || 0)} min={0} /></Field>
-            <Field label="Reserva (%)"><TInput type="number" value={form.reserva_pct} onChange={(e) => set("reserva_pct", parseFloat(e.target.value) || 0)} min={0} max={100} step={0.5} /></Field>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} style={{ color: "var(--color-text2)" }}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={saving || !form.nombre.trim()} style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
-            {saving ? "Guardando..." : initial ? "Guardar cambios" : "Crear consorcio"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-const EMPTY_U: UnidadCreate = { unidad: "", piso: "", dpto: "", propietario: "", inquilino: "", coef_a: 0, coef_b: 0, coef_c: 0, email: "" };
-
-function UnidadDialog({ consorcioId, initial, onClose, onSaved }: { consorcioId: number; initial?: Unidad; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState<UnidadCreate>(
-    initial
-      ? { unidad: initial.unidad, piso: initial.piso, dpto: initial.dpto, propietario: initial.propietario ?? "", inquilino: initial.inquilino ?? "", coef_a: initial.coef_a, coef_b: initial.coef_b, coef_c: initial.coef_c, email: initial.email ?? "" }
-      : { ...EMPTY_U }
-  );
-  const [saving, setSaving] = useState(false);
-  const set = (k: keyof UnidadCreate, v: string | number) => setForm((f) => ({ ...f, [k]: v }));
-
-  const handleSave = async () => {
-    if (!form.unidad.trim()) return;
-    setSaving(true);
-    try {
-      initial ? await api.put(`/api/unidades/${initial.id}`, form) : await api.post(`/api/consorcios/${consorcioId}/unidades`, form);
-      onSaved(); onClose();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail ?? err?.message ?? "Error desconocido");
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <Dialog open onOpenChange={onClose}>
-      <DialogContent style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)", color: "var(--color-text)" }}>
-        <DialogHeader><DialogTitle style={{ color: "var(--color-text)" }}>{initial ? "Editar Unidad" : "Nueva Unidad"}</DialogTitle></DialogHeader>
-        <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Unidad *"><TInput value={form.unidad} onChange={(e) => set("unidad", e.target.value)} placeholder="1A" /></Field>
-            <Field label="Piso"><TInput value={form.piso} onChange={(e) => set("piso", e.target.value)} placeholder="1" /></Field>
-            <Field label="Dpto"><TInput value={form.dpto} onChange={(e) => set("dpto", e.target.value)} placeholder="A" /></Field>
-          </div>
-          <Field label="Propietario"><TInput value={form.propietario ?? ""} onChange={(e) => set("propietario", e.target.value)} placeholder="Juan Garcia" /></Field>
-          <Field label="Inquilino"><TInput value={form.inquilino ?? ""} onChange={(e) => set("inquilino", e.target.value)} placeholder="Maria Lopez" /></Field>
-          <Field label="Email"><TInput type="email" value={form.email ?? ""} onChange={(e) => set("email", e.target.value)} placeholder="correo@ejemplo.com" /></Field>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Coef A"><TInput type="number" value={form.coef_a} onChange={(e) => set("coef_a", parseFloat(e.target.value) || 0)} step={0.001} min={0} /></Field>
-            <Field label="Coef B"><TInput type="number" value={form.coef_b} onChange={(e) => set("coef_b", parseFloat(e.target.value) || 0)} step={0.001} min={0} /></Field>
-            <Field label="Coef C"><TInput type="number" value={form.coef_c} onChange={(e) => set("coef_c", parseFloat(e.target.value) || 0)} step={0.001} min={0} /></Field>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose} style={{ color: "var(--color-text2)" }}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={saving || !form.unidad.trim()} style={{ backgroundColor: "var(--color-accent)", color: "white" }}>
-            {saving ? "Guardando..." : initial ? "Guardar cambios" : "Crear unidad"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+import { Input } from "@/components/ui/input";
+import { Building2, Plus, Pencil, Trash2, Users, ChevronRight, MapPin, Hash, UploadCloud, Search } from "lucide-react";
+import { ConsorcioDialog } from "./consorcios/ConsorcioDialog";
+import { UnidadDialog } from "./consorcios/UnidadDialog";
+import { ImportarPadronDialog } from "./consorcios/ImportarPadronDialog";
+import { cn } from "@/lib/utils";
 
 export function ConsorciosPage() {
   const { setConsorcio } = useApp();
-  const { data: consorcios, loading: loadingC, error: errorC, refetch: refetchC } = useGet<Consorcio[]>("/api/consorcios");
+  const { data: consorcios, loading: loadingC, connecting: connectingC, error: errorC, refetch: refetchC } = useGet<Consorcio[]>("/api/consorcios");
   const [selected, setSelected] = useState<Consorcio | null>(null);
   const { data: unidades, loading: loadingU, refetch: refetchU } = useGet<Unidad[]>(
     selected ? `/api/consorcios/${selected.id}/unidades` : "",
@@ -353,72 +28,90 @@ export function ConsorciosPage() {
   const [importDialog, setImportDialog] = useState(false);
   const [deletingC, setDeletingC] = useState<number | null>(null);
   const [deletingU, setDeletingU] = useState<number | null>(null);
+  const [confirmDeleteC, setConfirmDeleteC] = useState<Consorcio | null>(null);
+  const [confirmDeleteU, setConfirmDeleteU] = useState<Unidad | null>(null);
+  const [deleteImpact, setDeleteImpact] = useState<number | null>(null);
+  const [unitSearch, setUnitSearch] = useState("");
 
-  const deleteConsorcio = async (id: number) => {
-    if (!confirm("Eliminar este consorcio y todas sus unidades?")) return;
-    setDeletingC(id);
+  const askDeleteConsorcio = async (c: Consorcio) => {
+    setConfirmDeleteC(c);
+    setDeleteImpact(null);
     try {
-      await api.delete(`/api/consorcios/${id}`);
-      if (selected?.id === id) setSelected(null);
+      const res = await api.get<Unidad[]>(`/api/consorcios/${c.id}/unidades`);
+      setDeleteImpact(res.data.length);
+    } catch { /* si falla el conteo, igual se puede confirmar sin el detalle */ }
+  };
+
+  const deleteConsorcio = async (c: Consorcio) => {
+    setDeletingC(c.id);
+    try {
+      await api.delete(`/api/consorcios/${c.id}`);
+      if (selected?.id === c.id) setSelected(null);
       refetchC();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail ?? err?.message ?? "Error al eliminar consorcio");
-    } finally { setDeletingC(null); }
+    } finally { setDeletingC(null); setConfirmDeleteC(null); }
   };
 
-  const deleteUnidad = async (id: number) => {
-    if (!confirm("Eliminar esta unidad?")) return;
-    setDeletingU(id);
+  const unidadesFiltradas = (unidades ?? []).filter((u) => {
+    if (!unitSearch.trim()) return true;
+    const q = unitSearch.trim().toLowerCase();
+    return [u.unidad, u.propietario, u.inquilino, u.email].some((v) => (v ?? "").toLowerCase().includes(q));
+  });
+
+  const deleteUnidad = async (u: Unidad) => {
+    setDeletingU(u.id);
     try {
-      await api.delete(`/api/unidades/${id}`);
+      await api.delete(`/api/unidades/${u.id}`);
       refetchU();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail ?? err?.message ?? "Error al eliminar unidad");
-    } finally { setDeletingU(null); }
+    } finally { setDeletingU(null); setConfirmDeleteU(null); }
   };
 
   return (
-    <div className="grid grid-cols-5 gap-5" style={{ height: "calc(100vh - 112px)" }}>
+    <div className="grid grid-cols-5 gap-5 h-[calc(100vh-112px)]">
       <div className="col-span-2 flex flex-col gap-3 overflow-hidden">
         <div className="flex items-center justify-between shrink-0">
-          <h2 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>Consorcios</h2>
-          <Button size="sm" onClick={() => setConsorcioDialog({ open: true })} className="h-7 px-3 text-xs gap-1"
-            style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}>
+          <h2 className="text-sm font-semibold text-text">Consorcios</h2>
+          <Button size="sm" onClick={() => setConsorcioDialog({ open: true })} variant="soft" className="h-7 px-3 text-xs gap-1">
             <Plus size={12} /> Nuevo
           </Button>
         </div>
         <div className="flex flex-col gap-2 overflow-y-auto flex-1">
-          {loadingC && [0, 1, 2].map((i) => (
-            <Skeleton key={i} className="h-20 rounded-xl" style={{ backgroundColor: "var(--color-surface)" }} />
+          {connectingC && <ConnectingState />}
+          {!connectingC && loadingC && [0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-20 rounded-xl bg-surface" />
           ))}
           {errorC && (
-            <div className="flex flex-col items-center justify-center gap-3 py-12 rounded-xl border" style={{ borderColor: "var(--color-danger)", backgroundColor: "rgba(239,68,68,0.05)" }}>
-              <p className="text-xs font-mono px-3 text-center" style={{ color: "var(--color-danger)" }}>Error: {errorC}</p>
-              <button onClick={refetchC} className="text-xs underline" style={{ color: "var(--color-accent)" }}>Reintentar</button>
+            <div className="flex flex-col items-center justify-center gap-3 py-12 rounded-xl border border-danger bg-danger/5">
+              <p className="text-xs font-mono px-3 text-center text-danger">Error: {errorC}</p>
+              <button onClick={refetchC} className="text-xs underline text-accent">Reintentar</button>
             </div>
           )}
-          {!loadingC && !errorC && (consorcios ?? []).length === 0 && (
+          {!connectingC && !loadingC && !errorC && (consorcios ?? []).length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 py-12">
-              <Building2 size={36} style={{ color: "var(--color-border)" }} />
-              <p className="text-xs" style={{ color: "var(--color-text2)" }}>Sin consorcios registrados</p>
+              <Building2 size={36} className="text-border" />
+              <p className="text-xs text-text2">Sin consorcios registrados</p>
             </div>
           )}
           {(consorcios ?? []).map((c) => {
             const isActive = selected?.id === c.id;
             return (
               <div key={c.id} onClick={() => { const next = isActive ? null : c; setSelected(next); if (next) setConsorcio(next.id, next.nombre); }}
-                className="rounded-xl border p-4 cursor-pointer transition-all"
-                style={{ backgroundColor: isActive ? "rgba(59,130,246,0.08)" : "var(--color-surface)", borderColor: isActive ? "rgba(59,130,246,0.4)" : "var(--color-border)" }}>
+                className={cn(
+                  "rounded-xl border p-4 cursor-pointer transition-all",
+                  isActive ? "bg-accent/[0.08] border-accent/40" : "bg-surface border-border"
+                )}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ backgroundColor: isActive ? "rgba(59,130,246,0.2)" : "rgba(255,255,255,0.05)" }}>
-                      <Building2 size={16} style={{ color: isActive ? "var(--color-accent)" : "var(--color-text2)" }} />
+                    <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center shrink-0", isActive ? "bg-accent/20" : "bg-white/5")}>
+                      <Building2 size={16} className={isActive ? "text-accent" : "text-text2"} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{c.nombre}</p>
+                      <p className="text-sm font-semibold truncate text-text">{c.nombre}</p>
                       {c.direccion && (
-                        <p className="text-xs flex items-center gap-1 mt-0.5 truncate" style={{ color: "var(--color-text2)" }}>
+                        <p className="text-xs flex items-center gap-1 mt-0.5 truncate text-text2">
                           <MapPin size={10} />{c.direccion}
                         </p>
                       )}
@@ -427,26 +120,24 @@ export function ConsorciosPage() {
                   <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => setConsorcioDialog({ open: true, edit: c })}
                       className="w-6 h-6 rounded flex items-center justify-center hover:bg-white/10 transition-colors">
-                      <Pencil size={12} style={{ color: "var(--color-text2)" }} />
+                      <Pencil size={12} className="text-text2" />
                     </button>
-                    <button onClick={() => deleteConsorcio(c.id)} disabled={deletingC === c.id}
+                    <button onClick={() => askDeleteConsorcio(c)} disabled={deletingC === c.id}
                       className="w-6 h-6 rounded flex items-center justify-center hover:bg-red-500/10 transition-colors">
-                      <Trash2 size={12} style={{ color: "var(--color-danger)" }} />
+                      <Trash2 size={12} className="text-danger" />
                     </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3">
-                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
-                    style={{ backgroundColor: "rgba(255,255,255,0.05)", color: "var(--color-text2)" }}>
+                  <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-white/5 text-text2">
                     <Users size={10} />{c.unidades} unidades
                   </span>
                   {c.cuit && (
-                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: "rgba(255,255,255,0.05)", color: "var(--color-text2)" }}>
+                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-white/5 text-text2">
                       <Hash size={10} />{c.cuit}
                     </span>
                   )}
-                  {isActive && <ChevronRight size={12} className="ml-auto" style={{ color: "var(--color-accent)" }} />}
+                  {isActive && <ChevronRight size={12} className="ml-auto text-accent" />}
                 </div>
               </div>
             );
@@ -456,73 +147,84 @@ export function ConsorciosPage() {
 
       <div className="col-span-3 flex flex-col gap-3 overflow-hidden">
         {!selected ? (
-          <div className="flex-1 rounded-xl border flex flex-col items-center justify-center gap-3"
-            style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
-            <Building2 size={40} style={{ color: "var(--color-border)" }} />
-            <p className="text-sm" style={{ color: "var(--color-text2)" }}>Selecciona un consorcio para ver sus unidades</p>
+          <div className="flex-1 rounded-xl border flex flex-col items-center justify-center gap-3 bg-surface border-border">
+            <Building2 size={40} className="text-border" />
+            <p className="text-sm text-text2">Selecciona un consorcio para ver sus unidades</p>
           </div>
         ) : (
           <>
             <div className="flex items-center justify-between shrink-0">
               <div>
-                <h2 className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>{selected.nombre}</h2>
-                <p className="text-xs mt-0.5" style={{ color: "var(--color-text2)" }}>{(unidades ?? []).length} unidades registradas</p>
+                <h2 className="text-sm font-semibold text-text">{selected.nombre}</h2>
+                <p className="text-xs mt-0.5 text-text2">{(unidades ?? []).length} unidades registradas</p>
               </div>
               <div className="flex items-center gap-2">
-                <Button size="sm" onClick={() => setImportDialog(true)} className="h-7 px-3 text-xs gap-1"
-                  style={{ backgroundColor: "rgba(255,255,255,0.05)", color: "var(--color-text2)", border: "1px solid var(--color-border)" }}>
+                <Button size="sm" onClick={() => setImportDialog(true)} className="h-7 px-3 text-xs gap-1 bg-white/5 text-text2 border border-border">
                   <UploadCloud size={12} /> Importar UF
                 </Button>
-                <Button size="sm" onClick={() => setUnidadDialog({ open: true })} className="h-7 px-3 text-xs gap-1"
-                  style={{ backgroundColor: "rgba(59,130,246,0.15)", color: "var(--color-accent)", border: "1px solid rgba(59,130,246,0.3)" }}>
+                <Button size="sm" onClick={() => setUnidadDialog({ open: true })} variant="soft" className="h-7 px-3 text-xs gap-1">
                   <Plus size={12} /> Nueva unidad
                 </Button>
               </div>
             </div>
-            <div className="flex-1 rounded-xl border overflow-hidden flex flex-col"
-              style={{ backgroundColor: "var(--color-surface)", borderColor: "var(--color-border)" }}>
+            {(unidades ?? []).length > 0 && (
+              <div className="relative shrink-0">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-text2" />
+                <Input
+                  value={unitSearch}
+                  onChange={(e) => setUnitSearch(e.target.value)}
+                  placeholder="Buscar por unidad, propietario, inquilino o email..."
+                  className="pl-8 h-8 text-sm bg-surface2 border-border text-text"
+                />
+              </div>
+            )}
+            <div className="flex-1 rounded-xl border overflow-hidden flex flex-col bg-surface border-border">
               {loadingU ? (
                 <div className="flex flex-col gap-2 p-3">
-                  {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-10 rounded-lg" style={{ backgroundColor: "var(--color-surface2)" }} />)}
+                  {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-10 rounded-lg bg-surface2" />)}
                 </div>
               ) : (unidades ?? []).length === 0 ? (
                 <div className="flex flex-col items-center justify-center flex-1 gap-3 py-12">
-                  <Users size={36} style={{ color: "var(--color-border)" }} />
-                  <p className="text-xs" style={{ color: "var(--color-text2)" }}>Sin unidades registradas</p>
+                  <Users size={36} className="text-border" />
+                  <p className="text-xs text-text2">Sin unidades registradas</p>
+                </div>
+              ) : unidadesFiltradas.length === 0 ? (
+                <div className="flex flex-col items-center justify-center flex-1 gap-3 py-12">
+                  <Search size={36} className="text-border" />
+                  <p className="text-xs text-text2">Ninguna unidad coincide con "{unitSearch}"</p>
                 </div>
               ) : (
                 <div className="overflow-y-auto flex-1">
                   <Table>
                     <TableHeader>
-                      <TableRow style={{ borderColor: "var(--color-border)" }}>
+                      <TableRow className="border-border">
                         {["NRO", "PROPIETARIO", "PISO/DPTO", "EMAIL", "COEF A", ""].map((h) => (
-                          <TableHead key={h} className="text-xs font-semibold uppercase tracking-wider"
-                            style={{ color: "var(--color-text2)", backgroundColor: "var(--color-surface2)" }}>{h}</TableHead>
+                          <TableHead key={h} className="text-xs font-semibold uppercase tracking-wider text-text2 bg-surface2">{h}</TableHead>
                         ))}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {(unidades ?? []).map((u) => (
-                        <TableRow key={u.id} className="transition-colors hover:bg-white/[0.02]" style={{ borderColor: "var(--color-border)" }}>
-                          <TableCell className="font-mono text-sm font-semibold" style={{ color: "var(--color-text)" }}>{u.unidad}</TableCell>
+                      {unidadesFiltradas.map((u) => (
+                        <TableRow key={u.id} className="transition-colors hover:bg-white/[0.02] border-border">
+                          <TableCell className="font-mono text-sm font-semibold text-text">{u.unidad}</TableCell>
                           <TableCell>
-                            <p className="text-sm" style={{ color: "var(--color-text)" }}>{u.propietario || "—"}</p>
-                            {u.inquilino && <p className="text-xs" style={{ color: "var(--color-text2)" }}>Inq: {u.inquilino}</p>}
+                            <p className="text-sm text-text">{u.propietario || "—"}</p>
+                            {u.inquilino && <p className="text-xs text-text2">Inq: {u.inquilino}</p>}
                           </TableCell>
-                          <TableCell className="text-sm" style={{ color: "var(--color-text2)" }}>
+                          <TableCell className="text-sm text-text2">
                             {[u.piso, u.dpto].filter(Boolean).join(" ") || "—"}
                           </TableCell>
-                          <TableCell className="text-xs" style={{ color: "var(--color-text2)" }}>{u.email || "—"}</TableCell>
-                          <TableCell className="font-mono text-xs" style={{ color: "var(--color-text2)" }}>{u.coef_a.toFixed(4)}</TableCell>
+                          <TableCell className="text-xs text-text2">{u.email || "—"}</TableCell>
+                          <TableCell className="font-mono text-xs text-text2">{u.coef_a.toFixed(4)}</TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1">
                               <button onClick={() => setUnidadDialog({ open: true, edit: u })}
                                 className="w-7 h-7 rounded flex items-center justify-center hover:bg-white/10 transition-colors">
-                                <Pencil size={13} style={{ color: "var(--color-text2)" }} />
+                                <Pencil size={13} className="text-text2" />
                               </button>
-                              <button onClick={() => deleteUnidad(u.id)} disabled={deletingU === u.id}
+                              <button onClick={() => setConfirmDeleteU(u)} disabled={deletingU === u.id}
                                 className="w-7 h-7 rounded flex items-center justify-center hover:bg-red-500/10 transition-colors">
-                                <Trash2 size={13} style={{ color: "var(--color-danger)" }} />
+                                <Trash2 size={13} className="text-danger" />
                               </button>
                             </div>
                           </TableCell>
@@ -550,6 +252,25 @@ export function ConsorciosPage() {
           onSaved={() => { setImportDialog(false); refetchU(); }}
         />
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteC !== null}
+        title="Eliminar consorcio"
+        description={confirmDeleteC
+          ? `Se eliminará "${confirmDeleteC.nombre}"${deleteImpact !== null ? ` junto con sus ${deleteImpact} unidades` : ""} y todos los gastos, pagos y proveedores asociados. Esta acción no se puede deshacer.`
+          : undefined}
+        loading={deletingC !== null}
+        onConfirm={() => confirmDeleteC && deleteConsorcio(confirmDeleteC)}
+        onCancel={() => { setConfirmDeleteC(null); setDeleteImpact(null); }}
+      />
+      <ConfirmDialog
+        open={confirmDeleteU !== null}
+        title="Eliminar unidad"
+        description={confirmDeleteU ? `Se eliminará la unidad ${confirmDeleteU.unidad}. Esta acción no se puede deshacer.` : undefined}
+        loading={deletingU !== null}
+        onConfirm={() => confirmDeleteU && deleteUnidad(confirmDeleteU)}
+        onCancel={() => setConfirmDeleteU(null)}
+      />
     </div>
   );
 }

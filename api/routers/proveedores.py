@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List
 import sqlite3
 from api.database import get_db, rows_to_list, row_to_dict
-from api.schemas import ProveedorOut, ProveedorCreate, ProveedorUpdate, CuentaCorrienteRow, MessageOut
+from api.schemas import ProveedorOut, ProveedorCreate, ProveedorUpdate, CuentaCorrienteRow, MessageOut, GastoOut
 
 router = APIRouter(tags=["Proveedores"])
 
@@ -69,5 +69,15 @@ def cuenta_corriente(pid: int, db: sqlite3.Connection = Depends(get_db)):
            FROM gastos WHERE proveedor_id=?
            GROUP BY periodo ORDER BY periodo DESC""",
         (pid,)
+    ).fetchall()
+    return rows_to_list(rows)
+
+
+@router.get("/proveedores/{pid}/gastos", response_model=List[GastoOut])
+def gastos_de_proveedor(pid: int, periodo: str = Query(...), db: sqlite3.Connection = Depends(get_db)):
+    """Detalle de los gastos que componen el total de un periodo en la cuenta corriente."""
+    rows = db.execute(
+        "SELECT * FROM gastos WHERE proveedor_id=? AND periodo=? ORDER BY descripcion",
+        (pid, periodo)
     ).fetchall()
     return rows_to_list(rows)

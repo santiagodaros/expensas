@@ -12,9 +12,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import consorcios, finanzas, dashboard, config_router, reportes, proveedores, sueldos
-from api.database import DB_PATH, run_migrations
+from api.database import DB_PATH, run_migrations, create_backup
 
 run_migrations(DB_PATH)
+try:
+    create_backup(DB_PATH)
+except Exception:
+    pass  # el backup nunca debe impedir que la app arranque
 
 app = FastAPI(
     title="Gestor Consorcios API",

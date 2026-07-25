@@ -35,6 +35,7 @@ class UnidadBase(BaseModel):
     coef_b: float = 0.0
     coef_c: float = 0.0
     email: Optional[str] = None
+    saldo_apertura: float = 0.0
 
 class UnidadCreate(UnidadBase):
     pass
@@ -42,6 +43,7 @@ class UnidadCreate(UnidadBase):
 class UnidadOut(UnidadBase):
     id: int
     consorcio_id: int
+    saldo_apertura_editable: bool = True
     model_config = {"from_attributes": True}
 
 class UnidadBatchIn(BaseModel):
@@ -131,13 +133,16 @@ class GastoParticularOut(GastoParticularBase):
     periodo: str
     model_config = {"from_attributes": True}
 
-class GastoParticularBatchIn(BaseModel):
-    consorcio_id: int
-    periodo: str
-    particulares: List[GastoParticularCreate]
-
 
 # ─── PAGOS ─────────────────────────────────────────────────────────────────────
+
+class BatchMarcarPagados(BaseModel):
+    """Body para POST /api/finanzas/pagos/batch_marcar — marca varias unidades
+    como pagadas de una vez, cobrando exactamente lo que cada una debía."""
+    consorcio_id: int
+    periodo: str
+    unidad_ids: List[int]
+
 
 class PagoRegistrar(BaseModel):
     """Body para POST /api/finanzas/pagos — registra/actualiza un pago de una unidad."""
@@ -221,7 +226,6 @@ class ConfigOut(BaseModel):
     smtp_server: str = ""
     smtp_port: str = "587"
     smtp_user: str = ""
-    git_repo_url: str = ""
 
 class ConfigUpdate(BaseModel):
     nombre_cat_a: Optional[str] = None
@@ -231,8 +235,20 @@ class ConfigUpdate(BaseModel):
     smtp_port: Optional[str] = None
     smtp_user: Optional[str] = None
     smtp_pass: Optional[str] = None
-    git_repo_url: Optional[str] = None
-    git_token: Optional[str] = None
+
+
+class BackupOut(BaseModel):
+    ok: bool
+    message: str
+    path: str
+    total_backups: int
+
+
+class SmtpTestRequest(BaseModel):
+    smtp_server: str
+    smtp_port: str = "587"
+    smtp_user: str
+    smtp_pass: Optional[str] = None  # si se omite, se usa la guardada (para no reescribirla por un campo vacío)
 
 
 # ─── SUELDOS ───────────────────────────────────────────────────────────────────
@@ -261,9 +277,6 @@ class SueldoUpdate(SueldoBase):
 
 
 # ─── MISC ──────────────────────────────────────────────────────────────────────
-
-class PeriodosOut(BaseModel):
-    periodos: List[str]
 
 class MessageOut(BaseModel):
     ok: bool
