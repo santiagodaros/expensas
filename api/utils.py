@@ -57,3 +57,13 @@ def load_pagos_periodo(db: sqlite3.Connection, consorcio_id: int, periodo: str):
     p_act = {p["unidad_id"]: dict(p) for p in act_rows}
     p_ant = {p["unidad_id"]: dict(p) for p in ant_rows}
     return p_ant, p_act
+
+
+def apply_interes_mora(saldo_ant: float, interes_pct: float) -> float:
+    """Aplica interes punitorio mensual sobre una deuda arrastrada de un periodo
+    anterior ya registrado. Nunca se aplica a saldos a favor (negativos) ni al
+    saldo de apertura de una unidad nueva (todavia no paso ningun periodo desde
+    que se cargo, asi que no hay atraso que penalizar)."""
+    if saldo_ant > 0 and interes_pct > 0:
+        return round(saldo_ant * (1 + interes_pct / 100.0), 2)
+    return saldo_ant

@@ -38,8 +38,8 @@ def get_consorcio(cid: int, db: sqlite3.Connection = Depends(get_db)):
 @router.post("/consorcios", response_model=ConsorcioOut, status_code=201)
 def create_consorcio(body: ConsorcioCreate, db: sqlite3.Connection = Depends(get_db)):
     cur = db.execute(
-        "INSERT INTO consorcios(nombre,cuit,direccion,unidades,reserva_pct,dia_vto) VALUES(?,?,?,?,?,?)",
-        (body.nombre, body.cuit, body.direccion, body.unidades, body.reserva_pct, body.dia_vto)
+        "INSERT INTO consorcios(nombre,cuit,direccion,unidades,reserva_pct,dia_vto,interes_mora_pct) VALUES(?,?,?,?,?,?,?)",
+        (body.nombre, body.cuit, body.direccion, body.unidades, body.reserva_pct, body.dia_vto, body.interes_mora_pct)
     )
     row = db.execute("SELECT * FROM consorcios WHERE id=?", (cur.lastrowid,)).fetchone()
     return row_to_dict(row)
@@ -48,8 +48,8 @@ def create_consorcio(body: ConsorcioCreate, db: sqlite3.Connection = Depends(get
 @router.put("/consorcios/{cid}", response_model=ConsorcioOut)
 def update_consorcio(cid: int, body: ConsorcioCreate, db: sqlite3.Connection = Depends(get_db)):
     db.execute(
-        "UPDATE consorcios SET nombre=?,cuit=?,direccion=?,unidades=?,reserva_pct=?,dia_vto=? WHERE id=?",
-        (body.nombre, body.cuit, body.direccion, body.unidades, body.reserva_pct, body.dia_vto, cid)
+        "UPDATE consorcios SET nombre=?,cuit=?,direccion=?,unidades=?,reserva_pct=?,dia_vto=?,interes_mora_pct=? WHERE id=?",
+        (body.nombre, body.cuit, body.direccion, body.unidades, body.reserva_pct, body.dia_vto, body.interes_mora_pct, cid)
     )
     row = db.execute("SELECT * FROM consorcios WHERE id=?", (cid,)).fetchone()
     if not row:

@@ -14,6 +14,7 @@ class ConsorcioBase(BaseModel):
     unidades: int = 0
     reserva_pct: float = 0.0
     dia_vto: int = 10
+    interes_mora_pct: float = 0.0
 
 class ConsorcioCreate(ConsorcioBase):
     pass

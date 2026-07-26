@@ -43,6 +43,8 @@ function RegistrarDialog({ row, onClose, onSaved }: RegistrarDialogProps) {
   const [monto, setMonto] = useState(String(
     row.pagado ? row.monto_recibido : (row.total_pagar > 0 ? row.total_pagar : 0)
   ));
+  const [telec, setTelec] = useState(String(row.telec ?? 0));
+  const [redondeo, setRedondeo] = useState(String(row.redondeo ?? 0));
   const { post, loading } = usePost<object, object>("/api/finanzas/pagos");
   const { post: postUndo, loading: undoing } = usePost<object, object>("/api/finanzas/pagos");
 
@@ -58,9 +60,9 @@ function RegistrarDialog({ row, onClose, onSaved }: RegistrarDialogProps) {
       pagado: 1,
       monto_recibido: montoRecibido,
       saldo_inicial: row.saldo_anterior,
-      telec: row.telec,
+      telec: parseFloat(telec) || 0,
       reserva: row.reserva,
-      redondeo: row.redondeo,
+      redondeo: parseFloat(redondeo) || 0,
       imp_mes_override: row.imp_mes > 0 ? row.imp_mes : undefined,
     });
     if (res) {
@@ -115,6 +117,16 @@ function RegistrarDialog({ row, onClose, onSaved }: RegistrarDialogProps) {
         <div className="flex flex-col gap-2">
           <label className="text-xs font-medium text-text2">Monto recibido</label>
           <Input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} className="bg-surface2 border-border text-text" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-text2">Telec / Varios (ya cobrado aparte)</label>
+            <Input type="number" value={telec} onChange={(e) => setTelec(e.target.value)} className="bg-surface2 border-border text-text" />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs font-medium text-text2">Ajuste de redondeo</label>
+            <Input type="number" value={redondeo} onChange={(e) => setRedondeo(e.target.value)} className="bg-surface2 border-border text-text" />
+          </div>
         </div>
         <DialogFooter>
           {row.pagado && (

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from api.database import get_db, rows_to_list
 from api.schemas import GastoOut, GastoCreate, GastoBatchIn, GastoUpdate, PagoRegistrar, PagosResumenOut, PagoUnitRow, MessageOut, GastoParticularOut, GastoParticularCreate, BatchMarcarPagados
-from api.utils import safe_filename_part, safe_periodo, load_pagos_periodo
+from api.utils import safe_filename_part, safe_periodo, load_pagos_periodo, apply_interes_mora
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -134,7 +134,7 @@ def get_pagos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlite
     cid = consorcio; per = periodo
     cons_row = db.execute("SELECT * FROM consorcios WHERE id=?", (cid,)).fetchone()
     if not cons_row: raise HTTPException(404, "Consorcio no encontrado")
-    cons = dict(cons_row); reserva_pct = _tf(cons.get("reserva_pct", 0.0))
+    cons = dict(cons_row); reserva_pct = _tf(cons.get("reserva_pct", 0.0)); interes_pct = _tf(cons.get("interes_mora_pct", 0.0))
     unis = db.execute("SELECT * FROM unidades WHERE consorcio_id=? ORDER BY CAST(unidad AS INTEGER)", (cid,)).fetchall()
     gs = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=?", (cid, per)).fetchall()
     p_ant, p_act = load_pagos_periodo(db, cid, per)
@@ -154,8 +154,10 @@ def get_pagos(consorcio: int = Query(...), periodo: str = Query(...), db: sqlite
         # trasladarse como credito a favor del mes siguiente, no perderse.
         # Si todavia no hay ningun pago anterior registrado, se arranca desde
         # el saldo de apertura cargado en la unidad (deuda o credito previo
-        # a empezar a usar el sistema).
-        saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u_d.get("saldo_apertura", 0.0))
+        # a empezar a usar el sistema). El interes por mora solo se aplica
+        # sobre deuda que ya vino de un periodo anterior registrado, nunca
+        # sobre el saldo de apertura de una unidad recien cargada.
+        saldo_ant = apply_interes_mora(_tf(pa.get("monto_deuda", 0.0)), interes_pct) if pa else _tf(u_d.get("saldo_apertura", 0.0))
         monto_rec = _tf(pc.get("monto_recibido", 0.0)); telec = _tf(pc.get("telec", 0.0))
         imp_display = imp_mes if imp_mes > 0 else _tf(pc.get("imp_mes_override") or 0)
         reserva = _tf(pc.get("reserva", 0.0)) if pc else _m(imp_display * reserva_pct / 100.0)

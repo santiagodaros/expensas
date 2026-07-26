@@ -8,7 +8,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from decimal import Decimal, ROUND_HALF_UP
 from fpdf import FPDF
 from api.database import get_db
-from api.utils import safe_filename_part, safe_periodo, load_pagos_periodo
+from api.utils import safe_filename_part, safe_periodo, load_pagos_periodo, apply_interes_mora
 
 router = APIRouter(tags=["Reportes"])
 
@@ -166,6 +166,7 @@ def _page_recaudacion(pdf, consorcio, unis, gastos, pagos_ant, pagos_act, period
     nom = consorcio.get("nombre", "")
     dire = consorcio.get("direccion", "")
     reserva_pct = _tf(consorcio.get("reserva_pct", 0.0))
+    interes_pct = _tf(consorcio.get("interes_mora_pct", 0.0))
     tot_a = sum(_tf(g["monto"]) for g in gastos if g["categoria"] == "A")
     tot_b = sum(_tf(g["monto"]) for g in gastos if g["categoria"] == "B")
     tot_c = sum(_tf(g["monto"]) for g in gastos if g["categoria"] == "C")
@@ -187,7 +188,7 @@ def _page_recaudacion(pdf, consorcio, unis, gastos, pagos_ant, pagos_act, period
         ca, cb, cc = _tf(u["coef_a"]), _tf(u["coef_b"]), _tf(u["coef_c"])
         ex = tot_a * ca / 100.0 + tot_b * cb / 100.0 + tot_c * cc / 100.0
         pa = pagos_ant.get(uid, {}); pc = pagos_act.get(uid, {})
-        saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u.get("saldo_apertura", 0.0))
+        saldo_ant = apply_interes_mora(_tf(pa.get("monto_deuda", 0.0)), interes_pct) if pa else _tf(u.get("saldo_apertura", 0.0))
         cobranza  = _tf(pc.get("monto_recibido", 0.0))
         telec     = _tf(pc.get("telec", 0.0))
         reserva   = _tf(pc.get("reserva", 0.0)) if pc else _m(ex * reserva_pct / 100.0)
@@ -536,7 +537,8 @@ def reporte_boleta(unidad_id: int, periodo: str, db: sqlite3.Connection = Depend
     gastos = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=? ORDER BY categoria, descripcion", (u["consorcio_id"], periodo)).fetchall()
     pagos_ant, pagos_act = _load_pagos(db, u["consorcio_id"], periodo)
     pa = pagos_ant.get(unidad_id, {}); pc = pagos_act.get(unidad_id, {})
-    saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u.get("saldo_apertura", 0.0))
+    interes_pct = _tf(cons.get("interes_mora_pct", 0.0))
+    saldo_ant = apply_interes_mora(_tf(pa.get("monto_deuda", 0.0)), interes_pct) if pa else _tf(u.get("saldo_apertura", 0.0))
     cobranza  = _tf(pc.get("monto_recibido", 0.0))
     telec     = _tf(pc.get("telec", 0.0))
     reserva   = _tf(pc.get("reserva", 0.0))
@@ -589,7 +591,8 @@ def enviar_boleta(unidad_id: int, periodo: str, background_tasks: BackgroundTask
     gastos = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=? ORDER BY categoria, descripcion", (u["consorcio_id"], periodo)).fetchall()
     pagos_ant, pagos_act = _load_pagos(db, u["consorcio_id"], periodo)
     pa = pagos_ant.get(unidad_id, {}); pc = pagos_act.get(unidad_id, {})
-    saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u.get("saldo_apertura", 0.0))
+    interes_pct = _tf(cons.get("interes_mora_pct", 0.0))
+    saldo_ant = apply_interes_mora(_tf(pa.get("monto_deuda", 0.0)), interes_pct) if pa else _tf(u.get("saldo_apertura", 0.0))
     cobranza  = _tf(pc.get("monto_recibido", 0.0))
     telec     = _tf(pc.get("telec", 0.0))
     reserva   = _tf(pc.get("reserva", 0.0))

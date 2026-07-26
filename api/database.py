@@ -110,6 +110,13 @@ def run_migrations(db_path: str):
         except sqlite3.OperationalError:
             pass  # columna ya existe
 
+        # Interes punitorio mensual sobre mora, configurable por consorcio (0 = desactivado)
+        try:
+            con.execute("ALTER TABLE consorcios ADD COLUMN interes_mora_pct REAL DEFAULT 0.0")
+            con.commit()
+        except sqlite3.OperationalError:
+            pass  # columna ya existe
+
         # Crear tabla gastos_particulares si no existe
         con.execute("""
             CREATE TABLE IF NOT EXISTS gastos_particulares (

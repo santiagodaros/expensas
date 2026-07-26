@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Field, TInput } from "@/components/ui/form-field";
 
-const EMPTY_C: ConsorcioCreate = { nombre: "", cuit: "", direccion: "", unidades: 0, reserva_pct: 5, dia_vto: 10 };
+const EMPTY_C: ConsorcioCreate = { nombre: "", cuit: "", direccion: "", unidades: 0, reserva_pct: 5, dia_vto: 10, interes_mora_pct: 0 };
 
 export function ConsorcioDialog({ initial, onClose, onSaved }: { initial?: Consorcio; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState<ConsorcioCreate>(
     initial
-      ? { nombre: initial.nombre, cuit: initial.cuit ?? "", direccion: initial.direccion ?? "", unidades: initial.unidades, reserva_pct: initial.reserva_pct, dia_vto: initial.dia_vto }
+      ? { nombre: initial.nombre, cuit: initial.cuit ?? "", direccion: initial.direccion ?? "", unidades: initial.unidades, reserva_pct: initial.reserva_pct, dia_vto: initial.dia_vto, interes_mora_pct: initial.interes_mora_pct }
       : { ...EMPTY_C }
   );
   const [saving, setSaving] = useState(false);
@@ -43,6 +43,9 @@ export function ConsorcioDialog({ initial, onClose, onSaved }: { initial?: Conso
             <Field label="Cant. unidades"><TInput type="number" value={form.unidades} onChange={(e) => set("unidades", parseInt(e.target.value) || 0)} min={0} /></Field>
             <Field label="Reserva (%)"><TInput type="number" value={form.reserva_pct} onChange={(e) => set("reserva_pct", parseFloat(e.target.value) || 0)} min={0} max={100} step={0.5} /></Field>
           </div>
+          <Field label="Interés por mora mensual (%) — 0 desactiva">
+            <TInput type="number" value={form.interes_mora_pct} onChange={(e) => set("interes_mora_pct", parseFloat(e.target.value) || 0)} min={0} max={100} step={0.5} />
+          </Field>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} className="text-text2">Cancelar</Button>

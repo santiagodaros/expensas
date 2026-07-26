@@ -7,6 +7,7 @@ export interface Consorcio {
   unidades: number;
   reserva_pct: number;
   dia_vto: number;
+  interes_mora_pct: number;
 }
 
 export interface ConsorcioCreate {
@@ -16,6 +17,7 @@ export interface ConsorcioCreate {
   unidades: number;
   reserva_pct: number;
   dia_vto: number;
+  interes_mora_pct: number;
 }
 
 // ─── Unidades ─────────────────────────────────────────────────────────────────

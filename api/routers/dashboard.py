@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime
 from api.database import get_db
 from api.schemas import DashboardOut, DashboardKPI, BarData, DeudorPendiente
-from api.utils import load_pagos_periodo
+from api.utils import load_pagos_periodo, apply_interes_mora
 
 router = APIRouter(tags=["Dashboard"])
 
@@ -38,6 +38,7 @@ def get_dashboard(
     cons = db.execute("SELECT * FROM consorcios WHERE id=?", (consorcio,)).fetchone()
     if not cons: return DashboardOut(kpi=DashboardKPI(total_unidades=0,pagados=0,pendientes=0,pct_cobranza=0,v_recaudado=0,v_deuda=0), chart=[], deudores=[])
     cons = dict(cons); reserva_pct = _tf(cons.get("reserva_pct", 0.0)); dia_vto = int(cons.get("dia_vto") or 10)
+    interes_pct = _tf(cons.get("interes_mora_pct", 0.0))
 
     unis = db.execute("SELECT * FROM unidades WHERE consorcio_id=? ORDER BY CAST(unidad AS INTEGER)", (consorcio,)).fetchall()
     gs = db.execute("SELECT * FROM gastos WHERE consorcio_id=? AND periodo=?", (consorcio, per)).fetchall()
@@ -56,7 +57,7 @@ def get_dashboard(
         ca, cb, cc = _tf(u_d.get("coef_a")), _tf(u_d.get("coef_b")), _tf(u_d.get("coef_c"))
         imp = tot_a*ca/100.0 + tot_b*cb/100.0 + tot_c*cc/100.0
         pa = p_ant.get(uid, {}); pc = p_act.get(uid, {})
-        saldo_ant = _tf(pa.get("monto_deuda", 0.0)) if pa else _tf(u_d.get("saldo_apertura", 0.0))
+        saldo_ant = apply_interes_mora(_tf(pa.get("monto_deuda", 0.0)), interes_pct) if pa else _tf(u_d.get("saldo_apertura", 0.0))
         monto_rec = _tf(pc.get("monto_recibido", 0.0)); telec = _tf(pc.get("telec", 0.0))
         imp_d = imp if imp > 0 else _tf(pc.get("imp_mes_override") or 0)
         reserva = _tf(pc.get("reserva", 0.0)) if pc else round(imp_d * reserva_pct / 100.0, 2)
