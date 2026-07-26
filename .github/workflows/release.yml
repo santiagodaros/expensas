@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag a compilar y publicar (ej: v2.5.0)'
+        required: true
 
 jobs:
   release:
@@ -12,7 +17,23 @@ jobs:
       contents: write
 
     steps:
+      # auto-tag.yml empuja el tag usando el GITHUB_TOKEN por defecto, que por
+      # diseno de GitHub Actions no dispara otros workflows (evita loops). Por
+      # eso este workflow tambien acepta un disparo manual (workflow_dispatch)
+      # indicando el tag a compilar, en vez de depender solo de `push: tags`.
+      - name: Resolve tag
+        id: resolve
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.resolve.outputs.tag }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -51,8 +72,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           projectPath: frontend
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Gestor de Consorcios ${{ github.ref_name }}'
+          tagName: ${{ steps.resolve.outputs.tag }}
+          releaseName: 'Gestor de Consorcios ${{ steps.resolve.outputs.tag }}'
           releaseBody: |
             ## Cambios en esta versión
 
