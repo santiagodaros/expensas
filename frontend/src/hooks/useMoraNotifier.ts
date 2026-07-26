@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import api from "@/lib/api";
 import { fmtCurrency } from "@/lib/utils";
 import { useApp } from "@/contexts/AppContext";
@@ -9,8 +10,11 @@ interface DashboardKpi {
 }
 
 /**
- * Notificación nativa (Web Notification API, soportada por WebView2 sin
- * plugins de Tauri) avisando si hay unidades en mora del período actual.
+ * Notificación nativa del sistema operativo (plugin de notificaciones de
+ * Tauri, se integra con el Centro de Actividades de Windows) avisando si hay
+ * unidades en mora del período actual. La Web Notification API del navegador
+ * NO sirve acá: WebView2 deniega el permiso en silencio sin mostrar ningún
+ * diálogo, así que la notificación nunca llegaba a aparecer.
  * Se dispara una sola vez por combinación consorcio+período en la sesión,
  * para no repetir el aviso cada vez que se navega al Dashboard.
  */
@@ -31,15 +35,14 @@ export function useMoraNotifier() {
         if (pendientes <= 0) return;
         notificados.current.add(key);
 
-        if (typeof Notification === "undefined") return;
-        let permission = Notification.permission;
-        if (permission === "default") permission = await Notification.requestPermission();
-        if (permission !== "granted") return;
+        let granted = await isPermissionGranted();
+        if (!granted) granted = (await requestPermission()) === "granted";
+        if (!granted) return;
 
-        const n = new Notification(`${consorcioNombre}: ${pendientes} unidad${pendientes === 1 ? "" : "es"} en mora`, {
+        sendNotification({
+          title: `${consorcioNombre}: ${pendientes} unidad${pendientes === 1 ? "" : "es"} en mora`,
           body: `Período ${periodo} — deuda pendiente total: ${fmtCurrency(v_deuda)}`,
         });
-        n.onclick = () => window.focus();
       })
       .catch(() => {});
 
